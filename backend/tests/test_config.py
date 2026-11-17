@@ -20,6 +20,18 @@ SECRET_FIELDS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test here starts from an empty environment, not the machine's.
+
+    ``_env_file=None`` keeps a local ``.env`` out, but pydantic-settings still
+    reads process variables. CI sets ``DATABASE_URL`` for its own Postgres, and
+    the defaults these tests assert were silently replaced by it.
+    """
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+
+
 def _settings(**env: str) -> Settings:
     """Build settings from an explicit environment, ignoring any local .env file."""
     return Settings(_env_file=None, **env)  # type: ignore[call-arg]

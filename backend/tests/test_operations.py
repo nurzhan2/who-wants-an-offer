@@ -321,6 +321,9 @@ async def test_embedding_without_a_model_fails_with_what_to_install(
         return _outcome(0, 500, "unavailable")
 
     monkeypatch.setattr(operations_service, "embed_pending", unavailable)
+    # Titles run first since the title-first walk; unpatched, they reached the
+    # real database — present on a developer's machine, absent in CI.
+    monkeypatch.setattr(operations_service, "embed_pending_titles", unavailable)
     with pytest.raises(AppError, match="uv sync --extra embeddings"):
         await operations_service._embed(Progress())
 
