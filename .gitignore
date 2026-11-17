@@ -59,3 +59,10 @@ agent/session_signal.json
 Thumbs.db
 .idea/
 .vscode/
+
+# Working notes for AI agents: kept locally, not part of the project
+prompts/
+MEGAPROMPT*.md
+03-phase3-sources.md
+cost-optimization.md
+.claude/
