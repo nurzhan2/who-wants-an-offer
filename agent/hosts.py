@@ -3,7 +3,7 @@
 Two problems live here because they are one problem seen twice.
 
 **The host is data, not a constant.** ``agent/login.py`` had a city subdomain
-written into it as a stopgap, which is the thing CLAUDE.md forbids by name —
+written into it as a stopgap, which is the thing docs/ENGINEERING.md forbids by name —
 «не хардкодить … город Алматы». The cities are already described, with aliases
 and one marked default, in ``backend/app/sources/hh_sites.yaml``, so this reads
 that file. Reading a data file is not importing the backend: nothing here

@@ -339,7 +339,7 @@ fails the build** — green has to mean everything actually ran.
 
 ## Docs
 
-- [`CLAUDE.md`](CLAUDE.md) — engineering rules for AI agents working in this repo
+- [`docs/ENGINEERING.md`](docs/ENGINEERING.md) — engineering rules for AI agents working in this repo
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — modules, data flow, schema
 - [`docs/SOURCES.md`](docs/SOURCES.md) — source catalogue, endpoints, legality
 - [`docs/MATCHING.md`](docs/MATCHING.md) — scoring algorithm specification

@@ -83,7 +83,7 @@ CACHE_SCHEMA = 1
 RETRYABLE_STATUS: frozenset[int] = frozenset({408, 429, 500, 502, 503, 504})
 
 #: Refused at the transport whatever a connector declares, so the bans in
-#: CLAUDE.md and in the phase brief are code rather than convention. These three
+#: docs/ENGINEERING.md and in the phase brief are code rather than convention. These three
 #: forbid automated collection in their terms outright, so no path on them is
 #: reachable and no connector can argue otherwise.
 BLOCKED_HOSTS: frozenset[str] = frozenset(
@@ -727,7 +727,7 @@ class SourceHTTP:
         lowers the rate — and that is the property that makes it safe to expose.
         There is no call that can speed a source up past the rate it declared,
         so this cannot become the "не отключать rate limiting «чтобы быстрее»"
-        that CLAUDE.md forbids; it can only be used to go slower than we said we
+        that docs/ENGINEERING.md forbids; it can only be used to go slower than we said we
         would, which is what a host that has just refused us is owed.
         """
         self._bucket.widen(min_delay_seconds)
@@ -742,7 +742,7 @@ class SourceHTTP:
     ) -> Any:
         """A GET whose body is JSON.
 
-        ``Any`` with the comment CLAUDE.md asks for: the payload's shape belongs
+        ``Any`` with the comment docs/ENGINEERING.md asks for: the payload's shape belongs
         to the source, and declaring it here would be a guess. The connector's
         own model validates it one line later.
         """

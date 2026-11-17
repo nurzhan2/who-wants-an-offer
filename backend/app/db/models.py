@@ -917,7 +917,7 @@ class SourceState(Base):
     invents (hh uses one per sitemap file, because a sitemap file is what its
     ``lastmod`` values are grouped by), and the value is JSONB the connector
     writes and reads back. Making this table know about sitemaps would put a
-    connector's business in the schema, which is the thing CLAUDE.md rule 5
+    connector's business in the schema, which is the thing docs/ENGINEERING.md rule 5
     exists to prevent.
 
     No surrogate id, for the same reason ``SourceQuota`` has none: the natural

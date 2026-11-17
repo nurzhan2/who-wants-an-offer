@@ -26,7 +26,7 @@ class SourceStateRepository:
     async def get(self, source_slug: str, key: str) -> dict[str, Any] | None:
         """The stored value, or None when this source has never written this key.
 
-        ``Any`` in the value type with the reason CLAUDE.md asks for: the shape
+        ``Any`` in the value type with the reason docs/ENGINEERING.md asks for: the shape
         belongs to the connector that wrote it, and the connector validates it
         with its own model on the way back in.
         """

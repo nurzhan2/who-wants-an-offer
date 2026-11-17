@@ -14,7 +14,7 @@ different processes with different rights:
   and the public pages the crawler already reads.
 * **Agent operations** — ``outcomes`` and ``send``. They need the owner's
   browser and hh session, which the API does not have and must never have
-  (CLAUDE.md, «два разных исполнителя»). The API only *records the request*;
+  (docs/ENGINEERING.md, «два разных исполнителя»). The API only *records the request*;
   the local watcher (``python -m wwao watch``) claims it over the token-guarded
   seam, runs the agent in its own process and reports back. Until a watcher
   claims it, the operation says so, instead of pretending to run.

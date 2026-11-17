@@ -208,7 +208,7 @@ class QueueItem:
         """One item from the wire, with the two required fields enforced.
 
         ``Any`` because this is the boundary where untyped JSON becomes typed
-        data — which is the one place CLAUDE.md's rule expects it.
+        data — which is the one place docs/ENGINEERING.md's rule expects it.
         """
         vacancy_id = payload.get("vacancy_id")
         url = payload.get("url")

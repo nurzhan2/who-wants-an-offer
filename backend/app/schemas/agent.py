@@ -3,7 +3,7 @@
 The wire shape of record is not this file. It is ``agent/queue.py``'s
 ``QueueItem`` and ``Result``, which were written first and which the agent
 already parses; these models exist so the backend can *serve* that shape
-without a raw dict crossing a layer boundary (CLAUDE.md rule 3).
+without a raw dict crossing a layer boundary (docs/ENGINEERING.md rule 3).
 
 Two things about it are load-bearing and easy to break by accident.
 

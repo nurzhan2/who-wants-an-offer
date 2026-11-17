@@ -143,7 +143,7 @@ class ResponseFacts:
 def read_status(state: dict[str, Any]) -> VacancyStatus:
     """Whether this vacancy is still open, from ``vacancyView``.
 
-    ``Any`` for the state for the reason CLAUDE.md asks for: it is hh's whole
+    ``Any`` for the state for the reason docs/ENGINEERING.md asks for: it is hh's whole
     boot payload and only the keys read here are validated.
 
     Two shapes are accepted for the archive flag — ``vacancyView.status.archived``
@@ -181,7 +181,7 @@ def read_status(state: dict[str, Any]) -> VacancyStatus:
 def read(state: dict[str, Any], vacancy_id: str) -> ResponseFacts | None:
     """The application facts for one vacancy, or None when the shape is unfamiliar.
 
-    ``Any`` for the state, with the reason CLAUDE.md asks for: this is hh's
+    ``Any`` for the state, with the reason docs/ENGINEERING.md asks for: this is hh's
     whole boot payload, dozens of unrelated keys, and the shape belongs to them.
     Everything read out of it is validated here.
 

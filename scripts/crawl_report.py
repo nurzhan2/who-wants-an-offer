@@ -14,7 +14,7 @@ facts in the same order so that the two read alike.
 
 Nothing here decides anything. Every number comes from a connector describing
 its own stored state — ``describe_last_run`` and ``describe_position``, both of
-which live in ``sources/`` for CLAUDE.md rule 5 — so a source added tomorrow
+which live in ``sources/`` for docs/ENGINEERING.md rule 5 — so a source added tomorrow
 appears on this screen without this file being edited, and a source that keeps
 no position is simply absent from it.
 """

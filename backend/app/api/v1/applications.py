@@ -18,7 +18,7 @@ another machine, the fix is not a bigger token in this file; it is not exposing
 it, and the deployment notes say so.
 
 Both endpoints refuse to serve at all when no token is configured. An unset
-secret must fail loudly rather than quietly disabling the check — CLAUDE.md
+secret must fail loudly rather than quietly disabling the check — docs/ENGINEERING.md
 rule 4 — because "the agent could not reach the backend" is a five-minute
 problem and "the queue was open" is not.
 

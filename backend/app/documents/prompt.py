@@ -25,7 +25,7 @@ takes, and the reason the schema is shaped the way it is.
 The markers themselves are shared with :mod:`app.letters.prompt` rather than
 redefined, so a description crafted against one prompt is defanged in the other.
 
-The prompt itself lives in ``app/llm/prompts/tailored_cv.md``, per CLAUDE.md;
+The prompt itself lives in ``app/llm/prompts/tailored_cv.md``, per docs/ENGINEERING.md;
 this module only fills it in.
 """
 

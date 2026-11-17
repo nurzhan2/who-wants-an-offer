@@ -201,7 +201,7 @@ def stated_city(posting: RawPosting) -> str | None:
     they worked out rather than for what the payload literally said, and a
     ``city`` key in it means a place name lifted from a structured field. Read
     by key rather than by source slug, so a new connector opts in from inside
-    ``sources/`` and this module never learns its name (CLAUDE.md rule 5). No
+    ``sources/`` and this module never learns its name (docs/ENGINEERING.md rule 5). No
     city is named here; the value comes from the posting.
 
     **The trust this places in a connector has one known hole.** hh fills the

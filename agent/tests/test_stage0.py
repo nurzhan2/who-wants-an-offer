@@ -4,7 +4,7 @@ Four things that all failed in the same way — quietly, on the owner's machine,
 in a place no test looked.
 
 *The host was written into the code.* ``login.py`` carried a city subdomain as a
-stopgap, which CLAUDE.md forbids by name, and the cities were already described
+stopgap, which docs/ENGINEERING.md forbids by name, and the cities were already described
 in a data file next door.
 
 *The redirect after sign-in killed the script.* hh sets a regional cookie and

@@ -166,7 +166,7 @@ def _bound(slug: str) -> BaseSource:
     """The connector with the shared HTTP client attached.
 
     Through the registry, never by importing a connector: the services hold the
-    registry and only the registry (CLAUDE.md rule 5), so teaching a second site
+    registry and only the registry (docs/ENGINEERING.md rule 5), so teaching a second site
     to be re-read is a change inside ``app/sources/``.
     """
     return bind_sources([get_source(slug)])[0]

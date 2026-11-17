@@ -120,7 +120,7 @@ async def _crawl(session: AsyncSession) -> list[SourceCrawl]:
     """Every registered source's position, as the source itself describes it.
 
     The service never looks inside a stored value. It hands each connector the
-    rows that connector wrote and takes back a list it can render — CLAUDE.md
+    rows that connector wrote and takes back a list it can render — docs/ENGINEERING.md
     rule 5, applied to reading: adding a source must not mean editing this file,
     and it does not, because a source that keeps no position answers with
     nothing and is left off the screen.

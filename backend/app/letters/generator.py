@@ -1,6 +1,6 @@
 """Generating one letter: ask, check the answer, ask once more, then fall back.
 
-The shape CLAUDE.md prescribes for every LLM feature in this project — validate
+The shape docs/ENGINEERING.md prescribes for every LLM feature in this project — validate
 with a Pydantic model, one retry carrying the error, then a rule-based fallback
 — applies here twice over, because there are two different kinds of wrong answer:
 

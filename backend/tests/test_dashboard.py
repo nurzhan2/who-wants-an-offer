@@ -212,7 +212,7 @@ async def test_the_crawl_position_is_decoded_by_the_connector_that_wrote_it(
 
     Keys are the connector's invention — one per sitemap file per host here, one
     per feed somewhere else — so the service hands each source its own rows and
-    renders what comes back. That is CLAUDE.md rule 5 applied to reading: adding
+    renders what comes back. That is docs/ENGINEERING.md rule 5 applied to reading: adding
     a source must not mean editing the overview.
     """
     states = SourceStateRepository(db_session)

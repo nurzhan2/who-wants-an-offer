@@ -17,7 +17,7 @@ it is a note about what was checked rather than a defect. So the trade is a real
 one and it is stated where the owner can see it — the document is generated in
 the format that parses best, and the report handed over with it says in as many
 words that exporting to PDF changes the layout and should be re-audited. The
-other half of the choice is CLAUDE.md's rule about dependencies: ``python-docx``
+other half of the choice is docs/ENGINEERING.md's rule about dependencies: ``python-docx``
 is already a project dependency, and no PDF writer is. ``reportlab`` is in the
 dev group, where it generates test fixtures; promoting a dev tool into the
 runtime to produce a format the auditor scores lower is the wrong trade twice.

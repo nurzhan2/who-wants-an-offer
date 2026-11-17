@@ -72,7 +72,7 @@ QUEUE_URL = f"{settings.api_v1_prefix}/applications/queue"
 RESULTS_URL = f"{settings.api_v1_prefix}/applications/results"
 
 #: A token that exists only inside this module. Never a real one, never a
-#: default in the code: CLAUDE.md rule 4 puts secrets in the environment only.
+#: default in the code: docs/ENGINEERING.md rule 4 puts secrets in the environment only.
 TEST_TOKEN = "local-agent-token-for-tests-only"
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 

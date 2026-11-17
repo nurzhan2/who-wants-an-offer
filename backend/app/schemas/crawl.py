@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 class SavedState(BaseModel):
     """One row a connector wrote to ``source_state``, with its date.
 
-    ``value`` is ``Any``-valued for the reason CLAUDE.md asks for: the shape
+    ``value`` is ``Any``-valued for the reason docs/ENGINEERING.md asks for: the shape
     belongs to the connector that wrote it and to nothing else. The repository
     does not validate it, this model does not interpret it, and the connector
     parses it back with its own model — which is what keeps the key scheme an
@@ -36,7 +36,7 @@ class CrawlPosition(BaseModel):
     """Where one source's walk of one part of a corpus has got to.
 
     Assembled by the connector out of its own saved state, because only the
-    connector knows how it keys that state. CLAUDE.md rule 5 puts the cost of
+    connector knows how it keys that state. docs/ENGINEERING.md rule 5 puts the cost of
     adding a source inside ``sources/``, and an overview endpoint that parsed
     ``source_state`` keys itself would move that cost back out.
 

@@ -10,7 +10,7 @@ So the endpoint accepts the crawl and hands back a handle. Four decisions make
 that work, and each of them had an alternative worth rejecting out loud.
 
 **"Enqueue" means an asyncio task in this process, and the queue is a dict.**
-There is no Celery, RQ or Arq in the dependency list, and CLAUDE.md says not to
+There is no Celery, RQ or Arq in the dependency list, and docs/ENGINEERING.md says not to
 add one without need. A broker would buy durability across restarts and a worker
 that can be scaled out — and would cost a second process, a second deployment
 unit and a message contract, for a single-user dashboard whose crawl is already

@@ -954,7 +954,7 @@ def test_the_return_after_a_pause_is_slower_and_can_only_be_slower() -> None:
 
     The multiplier is checked here too: the return has to be slower than the
     rate that was refused, and a value below one would silently make the pause
-    a speed-up, which is the exact shape of the thing CLAUDE.md forbids.
+    a speed-up, which is the exact shape of the thing docs/ENGINEERING.md forbids.
     """
     assert PAUSE_SLOWDOWN > 1.0
 

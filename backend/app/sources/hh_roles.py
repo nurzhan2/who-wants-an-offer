@@ -13,7 +13,7 @@ breadth produces are collapsed by the fingerprint that already runs.
 
 **Why the chain is three steps and not one.** The obvious shortcut is a list of
 slugs in a file. It is wrong twice over: it hardcodes one person's job search
-into the repository, which CLAUDE.md forbids for the city and forbids here for
+into the repository, which docs/ENGINEERING.md forbids for the city and forbids here for
 the same reason, and it goes stale silently — a slug hh retires becomes a 404
 nobody notices. So:
 
@@ -62,7 +62,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 #: The profile-to-roles mapping. A file rather than constants for the reason
-#: CLAUDE.md gives about the city: which work a candidate is looking for is a
+#: docs/ENGINEERING.md gives about the city: which work a candidate is looking for is a
 #: property of the deployment and not of the code.
 ROLES_FILE = Path(__file__).with_name("hh_roles.yaml")
 

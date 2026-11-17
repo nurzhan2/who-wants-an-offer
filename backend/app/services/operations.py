@@ -21,7 +21,7 @@ moving table, which is what a person clicking both buttons expects.
 
 **Two operations are not run here at all.** Reading hh's answers and sending
 confirmed applications need the owner's browser and hh session. The API does
-not have them and must not (CLAUDE.md: backend is anonymous, agent is local and
+not have them and must not (docs/ENGINEERING.md: backend is anonymous, agent is local and
 never on a server). So for ``outcomes`` and ``send`` this module only records
 that the owner asked; the local watcher (``python -m wwao watch``) claims the
 request over the token-guarded ``/applications`` seam, runs the agent in its

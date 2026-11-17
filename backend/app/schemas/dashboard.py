@@ -16,7 +16,7 @@ profile, two sent applications, five vacancies in six with no salary — the
 unanswered questions outnumber the answered ones.
 
 No text in this module is Russian. Everything here is data; the words a person
-reads are the frontend's, per CLAUDE.md rule 10. The one exception is text that
+reads are the frontend's, per docs/ENGINEERING.md rule 10. The one exception is text that
 was written in Russian by something else — the agent's reason for setting an
 application aside, hh's own warning line — which travels through verbatim
 because paraphrasing somebody else's sentence is how a dashboard starts lying.

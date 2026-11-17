@@ -1,6 +1,6 @@
 # Which kinds of work a profile is looking for, and how hh names them.
 #
-# A file rather than class constants for the reason CLAUDE.md gives about the
+# A file rather than class constants for the reason docs/ENGINEERING.md gives about the
 # city: what a candidate is looking for is a property of the deployment, not of
 # the code. It names no person and holds no list of hh slugs — see
 # `hh_roles.py` for the three steps this file is the first of.

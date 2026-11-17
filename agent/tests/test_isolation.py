@@ -40,7 +40,7 @@ BACKEND_ROOT = REPO_ROOT / "backend" / "app"
 #: import statement is what ``ast.Import`` models, and it is not the only way to
 #: get a module: ``importlib.import_module("app.core.config")`` crosses this
 #: boundary without producing one. That matters more here than anywhere else in
-#: the package, because this is the boundary CLAUDE.md draws around blast radius —
+#: the package, because this is the boundary docs/ENGINEERING.md draws around blast radius —
 #: what keeps a database URL and an Anthropic key out of a process driving a
 #: browser under somebody's login.
 DYNAMIC_IMPORTERS = frozenset({"import_module", "__import__", "load_module"})

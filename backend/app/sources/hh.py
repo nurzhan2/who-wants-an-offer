@@ -234,7 +234,7 @@ if TYPE_CHECKING:  # pragma: no cover - imported for the annotation only
 logger = get_logger(__name__)
 
 #: Which hh sites this deployment reads. A file rather than constants because
-#: the city is a property of the deployment, not of the code — CLAUDE.md's rule
+#: the city is a property of the deployment, not of the code — docs/ENGINEERING.md's rule
 #: against hardcoding Almaty — and a file inside the package because rule 5 says
 #: a source may not add settings to ``app/core/config.py``.
 SITES_FILE = Path(__file__).with_name("hh_sites.yaml")
@@ -536,7 +536,7 @@ def strip_html(markup: str | None) -> str | None:
 
     Deliberately not a new dependency. The brief suggested selectolax; against
     bs4 it would be the right call, but this is the whole of the work it would
-    do, CLAUDE.md asks for a check that what we have does not already suffice,
+    do, docs/ENGINEERING.md asks for a check that what we have does not already suffice,
     and a C extension in the install for one substitution is not a trade worth
     making.
     """
@@ -735,7 +735,7 @@ class HHDerived(BaseModel):
     ugly, they were measured once, and re-deriving them later from a stored
     payload would mean measuring them again.
 
-    A model rather than a dict, per CLAUDE.md rule 3.
+    A model rather than a dict, per docs/ENGINEERING.md rule 3.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -1160,7 +1160,7 @@ class CrawlSettings(BaseModel):
     cities the plan's area names — exactly what ran before this existed.
 
     In ``hh_sites.yaml`` rather than in ``app/core/config.py`` for the reason
-    the site list is: CLAUDE.md rule 5 keeps a source's settings inside
+    the site list is: docs/ENGINEERING.md rule 5 keeps a source's settings inside
     ``sources/``. It is also the honest place for them — the budget and the city
     rotation are one decision with the city list, not three.
     """
@@ -1957,7 +1957,7 @@ class HHSource(BaseSource):
         The reading half of :meth:`_save_run`, and the same shape as
         :meth:`describe_position`: the caller hands over the rows this source
         wrote and takes back something it can render, so ``scripts/`` and the
-        API never learn this connector's key scheme (CLAUDE.md rule 5).
+        API never learn this connector's key scheme (docs/ENGINEERING.md rule 5).
         """
         row = next((item for item in stored if item.key == RUN_KEY), None)
         if row is None:
@@ -3027,7 +3027,7 @@ class HHSource(BaseSource):
         for against the thing that describes it.
 
         Not silent — it is logged with the key and the reason, which is the
-        distinction CLAUDE.md draws against ``except Exception: pass``.
+        distinction docs/ENGINEERING.md draws against ``except Exception: pass``.
         """
         try:
             await self.state_set(self._census_key(site, name), census.model_dump(mode="json"))
@@ -3230,7 +3230,7 @@ def _is_int(value: Any) -> bool:
 def _json_state(escaped: str) -> dict[str, Any]:
     """The template's contents as JSON. Raises ``ValueError`` when it is not.
 
-    ``Any`` in the value type for the reason CLAUDE.md asks for: this is hh's
+    ``Any`` in the value type for the reason docs/ENGINEERING.md asks for: this is hh's
     whole boot state, dozens of unrelated keys, and the two we read are
     validated by their own models one call later.
     """

@@ -296,7 +296,7 @@ class Settings(BaseSettings):
 
     # ── Sources: framework ────────────────────────────────────────────
     # Source-agnostic on purpose. A per-source flag (HH_ENABLED, JSEARCH_ENABLED)
-    # would mean editing this file for every new connector, and CLAUDE.md rule 5
+    # would mean editing this file for every new connector, and docs/ENGINEERING.md rule 5
     # says adding a source must not require changes outside sources/.
     #: Slugs switched off for this deployment. Comma-separated.
     sources_disabled: Annotated[frozenset[str], NoDecode] = frozenset()
@@ -358,7 +358,7 @@ class Settings(BaseSettings):
     agent_api_token: SecretStr | None = None
     #: Which connector's postings the agent can act on. Configuration rather
     #: than a constant so that teaching the agent a second site does not need
-    #: an edit in this file — the same reason CLAUDE.md rule 5 gives for
+    #: an edit in this file — the same reason docs/ENGINEERING.md rule 5 gives for
     #: keeping per-source knowledge out of the framework.
     agent_source_slug: str = "hh"
     #: Floor on the match score before a vacancy is worth a slot out of the

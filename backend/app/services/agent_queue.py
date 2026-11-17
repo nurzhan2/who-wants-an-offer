@@ -1,7 +1,7 @@
 """What the local apply agent is handed, and what comes back from it.
 
 All the logic for ``app/api/v1/applications.py`` lives here; the router
-validates, calls one of these two functions and answers (CLAUDE.md rule 2).
+validates, calls one of these two functions and answers (docs/ENGINEERING.md rule 2).
 
 **Nothing in this module imports ``agent``, and nothing in ``agent`` imports
 this.** The two packages meet over HTTP and nowhere else: ``backend/`` is
@@ -772,7 +772,7 @@ def _to_item(row: Any) -> QueueItem | None:
 
     ``Any`` for the row: SQLAlchemy's ``Row`` is not usefully typed for a
     select of eighteen labelled columns, and every field is validated into a
-    Pydantic model immediately below — which is the boundary CLAUDE.md rule 3's
+    Pydantic model immediately below — which is the boundary docs/ENGINEERING.md rule 3's
     exception is for.
     """
     external_id = str(row.external_id)

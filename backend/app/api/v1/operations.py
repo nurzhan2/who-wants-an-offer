@@ -1,7 +1,7 @@
 """The overview's operation buttons.
 
 Validate, call :mod:`app.services.operations`, answer — nothing else lives here
-(CLAUDE.md rule 2). Why the operations are in-memory jobs, why a second copy is
+(docs/ENGINEERING.md rule 2). Why the operations are in-memory jobs, why a second copy is
 refused and why two of them are only *recorded* here is argued in the service.
 
 Starting is a JSON ``POST`` rather than a bare form post on purpose. A page on

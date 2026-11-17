@@ -21,7 +21,7 @@ Three things are done about that, and none of them is asking the model nicely:
    carries a link, or that claims a skill the profile does not list is rejected
    by :mod:`app.letters.generator` and regenerated. That check is code.
 
-The prompt itself lives in ``app/llm/prompts/cover_letter.md``, per CLAUDE.md;
+The prompt itself lives in ``app/llm/prompts/cover_letter.md``, per docs/ENGINEERING.md;
 this module only fills it in.
 
 One more block is filled in here and comes from :mod:`app.letters.examples`:

@@ -1,6 +1,6 @@
 # Which hh sites this deployment crawls, and how a planned area finds one.
 #
-# A file rather than class constants for the reason CLAUDE.md gives: the city is
+# A file rather than class constants for the reason docs/ENGINEERING.md gives: the city is
 # not a property of the code. A deployment that moves to Astana edits this and
 # nothing else; a deployment that adds hh.ru adds an entry here. `default: true`
 # marks the sites used when the plan names no place this file recognises, which

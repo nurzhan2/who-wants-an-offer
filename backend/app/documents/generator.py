@@ -1,6 +1,6 @@
 """Arranging one CV: ask, check the answer, ask once more, then fall back.
 
-The shape CLAUDE.md prescribes for every LLM feature — validate with a Pydantic
+The shape docs/ENGINEERING.md prescribes for every LLM feature — validate with a Pydantic
 model, one retry carrying the error, then a rule-based fallback — with the same
 two kinds of wrong answer the letter generator distinguishes:
 

@@ -261,7 +261,7 @@ def test_a_backend_that_is_not_running_is_not_a_stack_trace(
 def test_the_token_is_read_from_the_environment_and_never_from_the_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CLAUDE.md rule 4: secrets come from the environment, with no default.
+    """docs/ENGINEERING.md rule 4: secrets come from the environment, with no default.
 
     Also why it is not a command-line flag: an argument is visible in the
     process list to everything else on the machine, which is precisely what the
