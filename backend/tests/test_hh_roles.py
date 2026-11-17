@@ -526,7 +526,7 @@ def test_the_focus_weight_changes_direction_with_the_headline() -> None:
 # -- against the measurement itself ------------------------------------
 
 
-MEASUREMENT = Path(__file__).resolve().parents[2] / "docs" / "hh-probe-plan.json"
+MEASUREMENT = Path(__file__).resolve().parent / "fixtures" / "sources" / "hh-probe-plan.json"
 
 
 def _measured_slugs() -> tuple[tuple[str, ...], tuple[DirectoryRole, ...]]:
@@ -542,7 +542,7 @@ def _measured_slugs() -> tuple[tuple[str, ...], tuple[DirectoryRole, ...]]:
 def test_the_ranking_puts_python_first_on_the_slugs_hh_really_publishes() -> None:
     """The whole feature, against 10 435 real slugs rather than a dozen invented ones.
 
-    ``docs/hh-probe-plan.json`` is the measurement the catalogue path rests on,
+    ``fixtures/sources/hh-probe-plan.json`` is the measurement the catalogue path rests on,
     and it is in the repository precisely so this can be asserted without a
     network: every slug here is one hh published on 2026-09-08, including the
     198 that role 96 matches and the JavaScript pages that took the top of the

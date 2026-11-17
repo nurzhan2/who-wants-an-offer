@@ -9,8 +9,8 @@ import type { DocumentCandidate, DocumentKind, GeneratedDocument } from '@/types
 /**
  * One vacancy's card: the two buttons, what they produced, and the audit.
  *
- * This is the component `prompts/11-dashboard.md` expects to drop into each row
- * of its vacancy table, so it takes a candidate and owns nothing above itself.
+ * It is meant to drop into each row of the vacancy table, so it takes a
+ * candidate and owns nothing above itself.
  *
  * Three behaviours are load-bearing rather than cosmetic.
  *

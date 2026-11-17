@@ -326,7 +326,7 @@ def test_the_declared_pace_is_the_one_that_was_measured() -> None:
     millisecond.
 
     The numbers come from live runs against almaty.hh.kz and they are the whole
-    argument of ``prompts/20-night-crawl.md``: 1.02 rps was refused at the 50th
+    argument for a longer night budget over a faster one: 1.02 rps was refused at the 50th
     vacancy, 0.73 at the 172nd, 0.25 walked 961 over 88 minutes untouched.
     """
     limit = HHSource.rate_limit

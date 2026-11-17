@@ -85,7 +85,7 @@ HH_VACANCY_URL = f"{HH_HOST}/vacancy/136284790"
 HH_CAPTCHA_URL = f"{HH_HOST}/account/captcha?backurl=/vacancy/136284790&state=7f3c1a"
 
 #: Key-shaped: long, opaque, no dot. Both redaction rules should catch it.
-SECRET = "0f9c2b7a41d84e6f8a3b5c7d9e1f2a3b"
+SECRET = "testsecret0000000000000000"
 
 #: The bucket every timing test uses: five a second, one in hand.
 RATE = 5.0

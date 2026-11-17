@@ -4,8 +4,8 @@ import { VacancyDocuments } from '@/components/VacancyDocuments'
 /**
  * The vacancies the two buttons live on, best-scoring first.
  *
- * A holding place, deliberately. `prompts/11-dashboard.md` builds the Vacancies
- * screen — filters, the score breakdown, the table — and puts these same two
+ * A holding place, deliberately. The Vacancies screen owns the filters, the
+ * score breakdown and the table, and puts these same two
  * buttons on each of its rows; what this section does is give them somewhere to
  * work today, against live data, without pre-empting that screen's layout. The
  * component it renders per vacancy takes a candidate and owns nothing above

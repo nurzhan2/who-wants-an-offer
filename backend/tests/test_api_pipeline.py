@@ -290,7 +290,7 @@ async def test_a_crash_ends_the_job_and_keeps_the_details_out_of_the_body(
 ) -> None:
     """An exception's text can carry a URL with a key in it, so the job gets a
     sentence and the log gets the traceback."""
-    crawl.error = RuntimeError("postgresql://user:Zx9QvLiveKeyMustNotLeak@db/offers")
+    crawl.error = RuntimeError("postgresql://user:test-password@db/offers")
     job_id = (await client.post(RUN_URL)).json()["id"]
 
     finished = await _await_job(client, job_id)

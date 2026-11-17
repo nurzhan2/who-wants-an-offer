@@ -17,8 +17,8 @@ request has something to show: the button it came from.
 
 **Nothing here sends an application.** These endpoints generate, audit, store
 and hand over files. Sending is ``agent/``'s, from a browser, under the user's
-own account, after a human confirms it — and per ``prompts/11-dashboard.md``
-there is no send button in the dashboard at all, deliberately.
+own account, after a human confirms it. The dashboard can record that
+confirmation; it never submits an application itself.
 """
 
 from decimal import Decimal

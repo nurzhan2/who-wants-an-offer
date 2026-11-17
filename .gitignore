@@ -67,3 +67,6 @@ MEGAPROMPT*.md
 cost-optimization.md
 .claude/
 CLAUDE.md
+docs/ROADMAP.md
+docs/hh-catalog-probe.json
+docs/hh-probe-programmist.json
