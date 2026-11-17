@@ -3,7 +3,7 @@
 A self-hosted job-search pipeline for one candidate: it turns a CV into a structured profile, crawls hh.kz and three job APIs, ranks every vacancy against the profile, and writes a cover letter and a tailored CV per vacancy — Python, FastAPI, PostgreSQL + pgvector, React.
 A local browser agent then applies on hh, but only to what a person has confirmed.
 
-[![CI](https://github.com/nurzhan2/Who_wants_an_offer-/actions/workflows/ci.yml/badge.svg)](https://github.com/nurzhan2/Who_wants_an_offer-/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.12-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+[![CI](https://github.com/nurzhan2/who-wants-an-offer/actions/workflows/ci.yml/badge.svg)](https://github.com/nurzhan2/who-wants-an-offer/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.12-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Problem
 

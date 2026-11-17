@@ -242,7 +242,7 @@ class Settings(BaseSettings):
 
     # ── HTTP ──────────────────────────────────────────────────────────
     http_timeout: Annotated[float, Field(gt=0)] = 30.0
-    user_agent: str = "who-wants-an-offer/1.0 (+https://github.com/nurzhan2/Who_wants_an_offer-)"
+    user_agent: str = "who-wants-an-offer/1.0 (+https://github.com/nurzhan2/who-wants-an-offer)"
     #: Set in dev to cache source responses on disk and stop hammering APIs.
     http_cache_dir: Path | None = None
 

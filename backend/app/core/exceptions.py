@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 PROBLEM_JSON = "application/problem+json"
 #: Base URI for problem types; resolves to the error catalogue in the docs.
-PROBLEM_TYPE_BASE = "https://github.com/nurzhan2/Who_wants_an_offer-/blob/main/docs/errors.md"
+PROBLEM_TYPE_BASE = "https://github.com/nurzhan2/who-wants-an-offer/blob/main/docs/errors.md"
 
 
 class AppError(Exception):

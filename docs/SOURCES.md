@@ -778,7 +778,7 @@ query-строк, см. «`hh` — подробно» выше. Отдельно
    независимо от объявлений коннектора. Для `hh` запрет точечный — строка
    запроса, `/search` и `api.hh.ru/vacancies`, — потому что именно их
    запрещают `robots.txt` и сам hh, а остальной хост открыт.
-2. `User-Agent: who-wants-an-offer/1.0 (+https://github.com/nurzhan2/Who_wants_an_offer-)`.
+2. `User-Agent: who-wants-an-offer/1.0 (+https://github.com/nurzhan2/who-wants-an-offer)`.
 3. Rate limit задан в классе коннектора, по умолчанию 1 rps.
 4. Ретраи с экспоненциальным backoff на 429/5xx, максимум 4 попытки,
    уважать `Retry-After`. Проверка на робота (редирект на страницу-заглушку

@@ -6,7 +6,7 @@ application/problem+json`. Клиент ветвится по полю `type`, �
 
 ```json
 {
-  "type": "https://github.com/nurzhan2/Who_wants_an_offer-/blob/main/docs/errors.md#source-error",
+  "type": "https://github.com/nurzhan2/who-wants-an-offer/blob/main/docs/errors.md#source-error",
   "title": "Job source failed",
   "status": 502,
   "detail": "hh.ru returned 500",
