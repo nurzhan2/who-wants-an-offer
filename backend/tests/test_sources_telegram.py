@@ -17,7 +17,7 @@ handles. What is pinned:
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import SecretStr
@@ -421,3 +421,111 @@ async def test_the_card_offers_the_post_the_contact_and_a_message_to_copy(
     assert card.manual_apply.post_url == "https://t.me/synthetic_jobs/1"
     assert "@synthetic_jobs" in card.manual_apply.message
     assert card.manual_apply.message.endswith("Текст письма.")
+
+
+# ── the Telethon adapter, against a fake client ───────────────────────
+
+
+class FakeMessage:
+    def __init__(self, number: int, text: str | None) -> None:
+        self.id = number
+        self.date = NOW
+        self.message = text
+
+
+class FakeTelegramClient:
+    """Stands in for telethon.TelegramClient; records how it was built and used."""
+
+    instances: ClassVar[list["FakeTelegramClient"]] = []
+    authorised = True
+    error: Exception | None = None
+
+    def __init__(self, session: str, api_id: int, api_hash: str, **options: Any) -> None:
+        self.session, self.options = session, options
+        self.connected = False
+        FakeTelegramClient.instances.append(self)
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def is_user_authorized(self) -> bool:
+        return FakeTelegramClient.authorised
+
+    async def disconnect(self) -> None:
+        self.connected = False
+
+    async def get_entity(self, username: str) -> str:
+        if FakeTelegramClient.error is not None:
+            raise FakeTelegramClient.error
+        return username
+
+    async def get_messages(self, entity: str, *, limit: int, min_id: int) -> list[FakeMessage]:
+        return [FakeMessage(min_id + 2, "текст"), FakeMessage(min_id + 1, None)]
+
+
+@pytest.fixture
+def fake_telethon(monkeypatch: pytest.MonkeyPatch) -> type[FakeTelegramClient]:
+    import telethon
+
+    FakeTelegramClient.instances = []
+    FakeTelegramClient.authorised = True
+    FakeTelegramClient.error = None
+    monkeypatch.setattr(telethon, "TelegramClient", FakeTelegramClient)
+    return FakeTelegramClient
+
+
+async def test_the_reader_raises_every_flood_wait_and_reads_only_text(
+    fake_telethon: type[FakeTelegramClient], tmp_path: Path
+) -> None:
+    from app.sources._telegram_client import TelethonReader
+
+    reader = TelethonReader(api_id=1, api_hash="h", session_path=tmp_path / "tg.session")
+    posts = await reader.recent("synthetic_jobs", after_id=10, limit=5)
+
+    client = fake_telethon.instances[0]
+    assert client.options["flood_sleep_threshold"] == 0, "Telethon must not sleep silently"
+    assert [item.id for item in posts] == [12], "a message without text is not a post"
+    await reader.close()
+    assert not client.connected
+
+
+async def test_the_reader_translates_telegrams_errors(
+    fake_telethon: type[FakeTelegramClient], tmp_path: Path
+) -> None:
+    from telethon import errors
+
+    from app.sources._telegram_client import TelethonReader
+
+    reader = TelethonReader(api_id=1, api_hash="h", session_path=tmp_path / "tg.session")
+    fake_telethon.error = errors.FloodWaitError(request=None, capture=37)
+    with pytest.raises(FloodWaitRequired) as waited:
+        await reader.recent("x_channel", after_id=0, limit=1)
+    assert waited.value.seconds == 37
+    fake_telethon.error = errors.UsernameNotOccupiedError(request=None)
+    with pytest.raises(ChannelMissingError):
+        await reader.recent("x_channel", after_id=0, limit=1)
+
+
+async def test_an_unauthorised_session_is_refused_before_any_read(
+    fake_telethon: type[FakeTelegramClient], tmp_path: Path
+) -> None:
+    from app.sources._telegram_client import TelethonReader
+
+    fake_telethon.authorised = False
+    reader = TelethonReader(api_id=1, api_hash="h", session_path=tmp_path / "tg.session")
+    with pytest.raises(SessionExpiredError):
+        await reader.recent("x_channel", after_id=0, limit=1)
+
+
+async def test_the_login_refuses_without_settings_and_inside_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.sources import telegram_login
+
+    monkeypatch.setattr(settings, "telegram_api_id", None)
+    assert await telegram_login.login() == 2
+    monkeypatch.setattr(settings, "telegram_api_id", 1)
+    monkeypatch.setattr(settings, "telegram_api_hash", SecretStr("h"))
+    inside = Path(telegram_login.__file__).resolve().parents[3] / "telegram.session"
+    monkeypatch.setattr(settings, "telegram_session_path", inside)
+    assert await telegram_login.login() == 2
