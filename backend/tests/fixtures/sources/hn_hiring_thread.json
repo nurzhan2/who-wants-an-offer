@@ -1,0 +1,62 @@
+{
+  "_comment": "RECONSTRUCTED from the HN Search API documentation (https://hn.algolia.com/api, items endpoint), not a live capture: the container that wrote it had no network. Re-record on the first live run. Four top-level comments: a conventional 'Company | Role | Location' header with a reply under it, one whose role is the third segment, a deleted comment (null text/author), and one with no '|' header at all.",
+  "id": 46100000,
+  "created_at": "2026-11-02T16:00:10.000Z",
+  "author": "whoishiring",
+  "title": "Ask HN: Who is hiring? (November 2026)",
+  "type": "story",
+  "text": "<p>Please state the location and include REMOTE, INTERNS and/or VISA when that sort of candidate is welcome.</p>",
+  "children": [
+    {
+      "id": 46100101,
+      "created_at": "2026-11-02T16:05:00.000Z",
+      "author": "acme_cto",
+      "type": "comment",
+      "parent_id": 46100000,
+      "story_id": 46100000,
+      "text": "Acme Robotics | Senior Python Engineer | Remote (EU) | Full-time | &#x2F;careers<p>We build warehouse robots with Python and Rust.<p>Apply: <a href=\"https:&#x2F;&#x2F;acme.example&#x2F;jobs\">https:&#x2F;&#x2F;acme.example&#x2F;jobs</a>",
+      "children": [
+        {
+          "id": 46100201,
+          "created_at": "2026-11-02T17:00:00.000Z",
+          "author": "curious",
+          "type": "comment",
+          "parent_id": 46100101,
+          "story_id": 46100000,
+          "text": "Is this open to Kazakhstan?",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": 46100102,
+      "created_at": "2026-11-02T16:10:00.000Z",
+      "author": "fintech_hr",
+      "type": "comment",
+      "parent_id": 46100000,
+      "story_id": 46100000,
+      "text": "Ledgerly | New York, NY (ONSITE) | Backend Developer, Go | $180k-$220k<p>Payments infrastructure in Go.",
+      "children": []
+    },
+    {
+      "id": 46100103,
+      "created_at": "2026-11-02T16:20:00.000Z",
+      "author": null,
+      "type": "comment",
+      "parent_id": 46100000,
+      "story_id": 46100000,
+      "text": null,
+      "children": []
+    },
+    {
+      "id": 46100104,
+      "created_at": "2026-11-02T16:30:00.000Z",
+      "author": "rambler",
+      "type": "comment",
+      "parent_id": 46100000,
+      "story_id": 46100000,
+      "text": "We are a small team looking for a data engineer who likes Python and hybrid work in Berlin.<p>Email me.",
+      "children": []
+    }
+  ]
+}

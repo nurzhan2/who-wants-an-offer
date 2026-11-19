@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RECONSTRUCTED from the shape of the public category feed
+  https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss,
+  not a live capture. Re-record on the first live run. The first item repeats
+  the main feed's backend posting (same guid); the second is only here, and its
+  title has no "Company: " prefix.
+-->
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>We Work Remotely: Back-End Programming</title>
+    <link>https://weworkremotely.com/categories/remote-back-end-programming-jobs</link>
+    <description>Back-end jobs</description>
+    <item>
+      <title>Acme Cloud: Senior Backend Engineer (Python)</title>
+      <region>Anywhere in the World</region>
+      <category>Back-End Programming</category>
+      <description>&lt;p&gt;We are hiring a &lt;strong&gt;Python&lt;/strong&gt; engineer to build our API.&lt;/p&gt;</description>
+      <pubDate>Wed, 18 Nov 2026 14:00:00 +0000</pubDate>
+      <guid>https://weworkremotely.com/remote-jobs/acme-cloud-senior-backend-engineer-python</guid>
+      <link>https://weworkremotely.com/remote-jobs/acme-cloud-senior-backend-engineer-python</link>
+    </item>
+    <item>
+      <title>Elixir Platform Engineer</title>
+      <region>Europe Only</region>
+      <category>Back-End Programming</category>
+      <description>&lt;p&gt;Phoenix and Postgres.&lt;/p&gt;</description>
+      <pubDate>Mon, 16 Nov 2026 08:00:00 +0000</pubDate>
+      <guid>https://weworkremotely.com/remote-jobs/elixir-platform-engineer</guid>
+      <link>https://weworkremotely.com/remote-jobs/elixir-platform-engineer</link>
+    </item>
+  </channel>
+</rss>
