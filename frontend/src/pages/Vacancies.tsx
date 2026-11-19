@@ -307,6 +307,7 @@ function ModeScore({ item, mode }: { item: VacancyListItem; mode: MatchMode }) {
       <div className="mt-1 text-micro uppercase text-muted">
         {mode === 'skills' && item.mode_score === null ? 'требований нет · ' : ''}
         совмещённый <span className="tnum">{formatScore(item.score)}</span>
+        {item.profile_slug ? ` · ${item.profile_slug}` : ''}
       </div>
     </div>
   )

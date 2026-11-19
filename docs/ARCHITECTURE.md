@@ -421,6 +421,37 @@ robots.txt (404) означает «разрешено» — так отвеча
 - `scheduler.py` — APScheduler: полный прогон раз в N часов, инкрементальный
   (только новое за 24ч) чаще.
 
+## Несколько резюме одновременно (с 0018, фаза 22)
+
+У владельца по резюме на трек (backend, llm, ml, fullstack, integrations,
+intern), и активных профилей теперь несколько. Как это устроено:
+
+- **Загрузка ничего не выключает.** `POST /resume/upload` добавляет профиль;
+  `?replace=<slug>` называет профиль, который этот файл заменит, и тот уходит
+  только после успешного разбора нового, передав ему slug, трек, приоритет,
+  hh-id и названия должностей. `POST /resume/batch` — несколько файлов за раз,
+  каждый со своим slug и треком; всё проверяется до записи первой строки.
+- **Оценка — на каждую пару.** `match` уникален по `(profile_id, vacancy_id)`
+  с первой миграции, так что схема скоринга не менялась: `score_corpus` без
+  профиля проходит по всем активным. Векторы вакансий общие; новый профиль стоит
+  двух своих векторов и одного прохода по корпусу.
+- **Лучший профиль вычисляется, а не хранится.** Правило в
+  `app/db/profile_order.py`: максимум `score` среди активных, при равенстве —
+  меньший `priority`, затем более новый. Список, карточка, очередь писем,
+  очередь агента и подтверждение берут его оттуда же, поэтому не расходятся.
+- **Однопрофильные вопросы** (заголовок плана для hh, экран по умолчанию,
+  атрибуция результата без оценки) отвечаются явной `default_profile()`:
+  активный с наименьшим `priority`. Неявного «первый попавшийся» больше нет.
+- **План — объединение планов.** `plan_for_profiles` раздаёт запросы профилей
+  по кругу, профиль по умолчанию первым; потолок — `max_queries_per_run` на
+  профиль, не выше 200. Темп источников это не меняет.
+- **Отклик — тем резюме, которое выиграло.** Очередь агента отдаёт
+  `profile_slug` и `hh_resume_id` победителя; без hh-id вакансия уходит в
+  «посмотреть руками» (`no_hh_resume`) — это и есть `needs_manual` на стороне
+  backend, потому что очередь ничего не пишет. Агент, пока выбор резюме в форме
+  hh не замерен, отправляет такие пункты в `needs_manual` сам
+  (`agent/prefilter.py`, `RESUME_PICKER_MEASURED`).
+
 ## Схема БД
 
 ```
@@ -428,7 +459,8 @@ candidate_profile
   id, name, headline, seniority, total_years, summary,
   locations jsonb, relocation bool, remote_pref,
   salary_min, salary_currency, languages jsonb, education jsonb,
-  raw_text, embedding vector(1024), created_at, is_active
+  raw_text, embedding vector(1024), created_at, is_active,
+  slug unique, track, priority int, hh_resume_id char(38) null   -- 0018
 
 profile_skill
   id, profile_id → candidate_profile, canonical_name, raw_name,
@@ -573,9 +605,11 @@ pipeline_run
 Что реализовано:
 
 ```
-POST   /api/v1/resume/upload          multipart → profile_id, задача разбора
-GET    /api/v1/profile/active         профиль, против которого всё считается
-GET    /api/v1/profile/active         активное резюме, без знания его id
+POST   /api/v1/resume/upload          multipart → profile_id, задача разбора;
+                                      ?replace=<slug> | ?slug=&track=&priority=&hh_resume_id=
+POST   /api/v1/resume/batch           несколько файлов, meta: [{slug, track, hh_resume_id, replace}]
+GET    /api/v1/profile                все профили: активные в порядке приоритета, потом остальные
+GET    /api/v1/profile/active         профиль по умолчанию (наименьший priority среди активных)
 GET    /api/v1/profile/{id}
 GET    /api/v1/profile/{id}/ats-report   прочитает ли резюме робот работодателя
 GET    /api/v1/profile/{id}/ats-report/{vacancy_id}  то же + требования вакансии

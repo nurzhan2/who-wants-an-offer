@@ -148,6 +148,8 @@ export interface VacancyListItem {
   last_seen_at: string | null
   is_active: boolean
   is_applied: boolean
+  /** The resume this score is for: the vacancy's best one. */
+  profile_slug?: string | null
 }
 
 /** Which stored number the list is ranked by. Never a recomputation. */
@@ -211,6 +213,13 @@ export interface MatchSummary {
   verdict: string | null
   application_angle: string | null
   scored_at: string
+  /** Which resume won this vacancy, and by how much over the next one. */
+  profile_id?: string | null
+  profile_slug?: string | null
+  profile_track?: string | null
+  runner_up_slug?: string | null
+  runner_up_score?: string | null
+  margin?: string | null
 }
 
 export interface LetterBrief {
@@ -452,6 +461,14 @@ export interface Profile {
   salary_currency: string | null
   languages: { code?: string; level?: string }[]
   is_active: boolean
+  /** The owner's handle for this resume; unique. */
+  slug: string | null
+  /** What kind of job it is for: free text. */
+  track: string | null
+  /** Who wins a tie between equal scores, lower first. */
+  priority: number
+  /** The same resume's 38-character id on hh, which the agent must select. */
+  hh_resume_id: string | null
   parse_status: ParseStatus
   parse_error: string | null
   resume_filename: string | null
