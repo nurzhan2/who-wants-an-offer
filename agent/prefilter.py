@@ -60,7 +60,7 @@ it lives in ``agent/state_page.py`` with the rest of the reading.
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, final
+from typing import Any, Final, final
 
 from agent.state import Status
 from agent.state_page import printable
@@ -271,11 +271,19 @@ def _question_text(item: object) -> str | None:
     return None
 
 
+#: Whether the resume picker in hh's response form has been measured and its
+#: selector verified in ``agent/selectors.py``. False until the live probe of
+#: phase 22 (STOP 4) records it; flipping it is part of that change, together
+#: with the mandate binding the resume id (STOP 5), never on its own.
+RESUME_PICKER_MEASURED: Final[bool] = False
+
+
 def decide_before_opening(
     *,
     closed_for_applicants: bool,
     archived: bool,
     external_application: bool = False,
+    resume_to_select: str | None = None,
 ) -> Decision:
     """What the queue alone can rule out, before a page is opened.
 
@@ -297,6 +305,18 @@ def decide_before_opening(
         return Decision(Verdict.SKIP, "вакансия закрыта для откликов")
     if external_application:
         return Decision(Verdict.MANUAL, "отклик оформляется на сайте работодателя")
+    if resume_to_select is not None and not RESUME_PICKER_MEASURED:
+        # Phase 22: the item names which of the owner's hh resumes to attach,
+        # and nothing in agent/selectors.py can read or change the resume hh's
+        # form preselects — that control has never been measured. Sending would
+        # attach whichever resume hh chose, beside a letter written from
+        # another. So the item goes to a person until the picker is probed
+        # (``probe_apply --stage open-form``) and verified like every selector.
+        return Decision(
+            Verdict.MANUAL,
+            f"нужно резюме hh {resume_to_select[:8]}…, а выбор резюме в форме отклика "
+            "ещё не замерен — откликнитесь этим резюме сами",
+        )
     return Decision(Verdict.PROCEED, "стоит открыть")
 
 

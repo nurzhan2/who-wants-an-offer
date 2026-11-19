@@ -355,6 +355,7 @@ def _to_candidates(
             closed_for_applicants=item.closed_for_applicants,
             archived=item.archived,
             external_application=item.external_application,
+            resume_to_select=item.hh_resume_id,
         )
         if decision.verdict is not Verdict.PROCEED:
             journal.record(

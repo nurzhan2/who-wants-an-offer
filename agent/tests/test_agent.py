@@ -1808,3 +1808,31 @@ def test_the_list_can_only_add_an_application_never_remove_one() -> None:
     assert Negotiations(total=1, applications=()).exists is True
     assert Negotiations(total=0, applications=()).exists is False
     assert Negotiations(total=0, applications=(an_application,)).exists is True
+
+
+# ── phase 22: which resume ────────────────────────────────────────────
+
+
+def test_an_item_naming_a_resume_is_parsed_and_a_malformed_one_refused() -> None:
+    """The backend says which hh resume won; a mangled id must not read as none."""
+    url = "https://almaty.hh.kz/vacancy/136773120"
+    item = QueueItem.from_json(
+        {"vacancy_id": "136773120", "url": url, "hh_resume_id": "a" * 38, "profile_slug": "llm"}
+    )
+    assert (item.hh_resume_id, item.profile_slug) == ("a" * 38, "llm")
+    assert QueueItem.from_json({"vacancy_id": "136773120", "url": url}).hh_resume_id is None
+    with pytest.raises(QueueFormatError):
+        QueueItem.from_json({"vacancy_id": "136773120", "url": url, "hh_resume_id": "short"})
+
+
+def test_an_item_needing_a_specific_resume_goes_to_a_person_until_the_picker_is_measured() -> None:
+    """Nothing in selectors.py can read or set the resume in hh's form, so an
+    item that names one is not opened: sending would attach whichever resume
+    hh preselected, beside a letter written from another."""
+    decision = decide_before_opening(
+        closed_for_applicants=False, archived=False, resume_to_select="a" * 38
+    )
+    assert decision.verdict is Verdict.MANUAL
+    assert "не замерен" in decision.reason
+    plain = decide_before_opening(closed_for_applicants=False, archived=False)
+    assert plain.verdict is Verdict.PROCEED

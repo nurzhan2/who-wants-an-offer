@@ -1,0 +1,114 @@
+# STOP 5 — PROPOSED, NOT APPLIED. Phase 22: the mandate also signs the hh resume id.
+# Applies with `git apply docs/stop5-mandate-resume.diff` once the owner says «да».
+# Also needed with it: Candidate (agent/human.py) carries `hh_resume_id` from the
+# QueueItem, and agent/submit.py checks the resume selected in hh's form against
+# mandate.hh_resume_id using the selector measured at STOP 4, refusing on a
+# mismatch. Until both land, agent/prefilter.py sends such items to needs_manual.
+
+--- a/agent/mandate.py	2026-11-19 15:35:30.636305162 +0000
++++ b/agent/mandate.py	2026-11-19 15:35:30.651362315 +0000
+@@ -85,9 +85,13 @@
+     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+ 
+ 
+-def _sign(vacancy_id: str, url: str, letter: str | None, form_digest: str) -> str:
+-    """The signature binding one mandate to one exact payload."""
+-    material = f"{vacancy_id}\x00{url}\x00{digest(letter)}\x00{form_digest}".encode()
++def _sign(
++    vacancy_id: str, url: str, letter: str | None, form_digest: str, hh_resume_id: str | None
++) -> str:
++    """The signature binding one mandate to one exact payload, resume included."""
++    material = (
++        f"{vacancy_id}\x00{url}\x00{digest(letter)}\x00{form_digest}\x00{hh_resume_id or ''}"
++    ).encode()
+     return hmac.new(_SECRET, material, hashlib.sha256).hexdigest()
+ 
+ 
+@@ -116,14 +120,21 @@
+     #: Digest of the form as it was shown, so a form that changed underneath
+     #: the confirmation invalidates it.
+     form_digest: str
+-    #: HMAC over the three fields above. See the module docstring.
++    #: Which of the owner's hh resumes this consent is for (phase 22). The
++    #: submitter must find exactly this one selected in hh's response form, or
++    #: refuse. ``None`` only for an item that named none — the old single-resume
++    #: flow, where hh's own preselection is what the person agreed to.
++    hh_resume_id: str | None
++    #: HMAC over the fields above. See the module docstring.
+     signature: str
+     confirmed_at: datetime
+ 
+     def __post_init__(self) -> None:
+         """Refuse to exist if the signature does not match the contents."""
+         if not hmac.compare_digest(
+-            self.signature, _sign(self.vacancy_id, self.url, self.letter, self.form_digest)
++            self.signature, _sign(
++                self.vacancy_id, self.url, self.letter, self.form_digest, self.hh_resume_id
++            )
+         ):
+             raise ForgedMandateError("mandate does not match the payload it carries")
+ 
+@@ -138,20 +149,28 @@
+         raise TypeError("a SendMandate must not cross a process boundary")
+ 
+ 
+-def mint(*, vacancy_id: str, url: str, letter: str | None, form_digest: str) -> SendMandate:
++def mint(
++    *,
++    vacancy_id: str,
++    url: str,
++    letter: str | None,
++    form_digest: str,
++    hh_resume_id: str | None,
++) -> SendMandate:
+     """Create consent for one application. Call this from the confirmation only.
+ 
+     Deliberately not named ``create``: every call site is a place where a human
+     said yes, and the word should look wrong anywhere else. ``test_boundaries``
+     asserts that this module's only production caller is ``agent/human.py``.
+     """
+-    signature = _sign(vacancy_id, url, letter, form_digest)
++    signature = _sign(vacancy_id, url, letter, form_digest, hh_resume_id)
+     _LIVE.add(signature)
+     return SendMandate(
+         vacancy_id=vacancy_id,
+         url=url,
+         letter=letter,
+         form_digest=form_digest,
++        hh_resume_id=hh_resume_id,
+         signature=signature,
+         confirmed_at=datetime.now(UTC),
+     )
+@@ -172,7 +191,13 @@
+     whose failures must all be ``MandateError`` — so it is converted here.
+     """
+     try:
+-        expected = _sign(mandate.vacancy_id, mandate.url, mandate.letter, mandate.form_digest)
++        expected = _sign(
++            mandate.vacancy_id,
++            mandate.url,
++            mandate.letter,
++            mandate.form_digest,
++            mandate.hh_resume_id,
++        )
+     except AttributeError as error:
+         raise ForgedMandateError(
+             "mandate is missing fields its constructor would have set"
+--- a/agent/human.py	2026-11-19 15:35:30.636334870 +0000
++++ b/agent/human.py	2026-11-19 15:35:30.651622619 +0000
+@@ -370,6 +370,7 @@
+             url=candidate.url,
+             letter=None if candidate.letter is None else candidate.letter.text,
+             form_digest=digest(candidate.render()),
++            hh_resume_id=candidate.hh_resume_id,
+         )
+         for candidate in kept
+     ]
+@@ -436,6 +437,7 @@
+                 url=candidate.url,
+                 letter=letter,
+                 form_digest=confirmation.card_digest,
++                hh_resume_id=candidate.hh_resume_id,
+             )
+         )
+     _say_it_once_for_the_batch([c for c in candidates if c.vacancy_id in confirmations], out)

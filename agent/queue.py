@@ -44,6 +44,7 @@ untouched and shown.
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -202,6 +203,13 @@ class QueueItem:
     #: valid one. Only ``agent.run --dashboard`` acts on it; the terminal flow
     #: asks the person at the keyboard regardless.
     confirmation: "DashboardConfirmation | None" = None
+    #: Which of the owner's hh resumes this item must be sent with (phase 22),
+    #: as hh's 38-character hash, and the backend's slug for it. ``None`` from a
+    #: hand-written queue or an older backend: the form's own preselection, as
+    #: before. Anything that is not the right shape is refused rather than
+    #: ignored — a dropped id would silently mean "whichever resume".
+    hh_resume_id: str | None = None
+    profile_slug: str | None = None
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> "QueueItem":
@@ -228,6 +236,12 @@ class QueueItem:
             )
         title = payload.get("title")
         explanation = payload.get("score_explanation")
+        resume = payload.get("hh_resume_id")
+        if resume is not None and (
+            not isinstance(resume, str) or not HH_RESUME_ID.fullmatch(resume)
+        ):
+            raise QueueFormatError(f"hh_resume_id должен быть 38 hex-символами: {resume!r}")
+        slug = payload.get("profile_slug")
         return cls(
             vacancy_id=vacancy_id,
             url=url,
@@ -241,7 +255,13 @@ class QueueItem:
             score_explanation=explanation if isinstance(explanation, str) else None,
             ats=ATSCard.from_json(payload.get("ats")),
             confirmation=DashboardConfirmation.from_json(payload.get("confirmation")),
+            hh_resume_id=resume,
+            profile_slug=slug if isinstance(slug, str) else None,
         )
+
+
+#: hh's resume hash: the 38 lowercase hex characters in ``/resume/<hash>``.
+HH_RESUME_ID: Final = re.compile(r"[0-9a-f]{38}")
 
 
 def _score(value: object) -> float | None:

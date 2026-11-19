@@ -199,7 +199,7 @@ def test_the_cli_routes_chain_without_asking_for_a_terminal(
         asked.append(base_url)
         return chain.EXIT_OK
 
-    monkeypatch.setattr(cli.chain_command, "run", fake_run)
+    monkeypatch.setattr(chain, "run", fake_run)
     code = cli.main(
         ["chain"],
         stdin=io.StringIO(),
