@@ -25,6 +25,7 @@ dependencies = [
     "python-docx>=1.2.0",
     "filetype>=1.2.0",
     "pyyaml>=6.0.3",
+    "telethon>=1.40",
 ]
 
 [project.optional-dependencies]
@@ -263,6 +264,15 @@ known-first-party = ["app", "factories", "helpers"]
 "backend/app/services/vacancies.py" = ["RUF001", "RUF002"]
 "backend/app/letters/store.py" = ["RUF001", "RUF002"]
 "backend/tests/test_multi_profile.py" = ["RUF001", "RUF002", "RUF003"]
+# Telegram: Russian job posts are the data, and the heuristic is made of
+# Russian words beside English ones and currency signs.
+"backend/app/sources/telegram.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/sources/_telegram_posts.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/sources/_telegram_client.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/sources/telegram_login.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/tests/test_sources_telegram.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/tests/test_hh_ru.py" = ["RUF001", "RUF002", "RUF003"]
+"scripts/prune_telegram_channels.py" = ["RUF001", "RUF002", "RUF003"]
 
 # Every message this agent prints is read by the person whose account it is
 # about to act on, so all of them are Russian, and RUF001-003 fire on almost
@@ -292,6 +302,12 @@ explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "alembic.*"
+ignore_missing_imports = true
+
+# Telethon ships no type information; it is used through three wrapped calls
+# in app/sources/_telegram_client.py and the login script.
+[[tool.mypy.overrides]]
+module = ["telethon", "telethon.*"]
 ignore_missing_imports = true
 
 # ── pytest ────────────────────────────────────────────────────────────

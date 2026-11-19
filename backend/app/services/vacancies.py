@@ -35,11 +35,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConfigurationError, NotFoundError
 from app.core.logging import get_logger
-from app.db.models import CandidateProfile, Match, VacancySource
+from app.db.models import Application, CandidateProfile, Match, Vacancy, VacancySource
 from app.db.repositories.application import ApplicationRepository
 from app.db.repositories.match import MatchRepository
 from app.db.repositories.profile import ProfileRepository
@@ -49,6 +50,7 @@ from app.matching.best import best_profiles
 from app.resume.skills import SkillCanonicalizer, default_canonicalizer
 from app.schemas.common import CursorPage
 from app.schemas.dashboard import (
+    ManualApply,
     MatchSummary,
     RequirementBreakdown,
     RequirementStanding,
@@ -155,12 +157,49 @@ async def card(session: AsyncSession, vacancy_id: UUID) -> VacancyCard | None:
                 "margin": best.margin,
             }
         )
+    letter = await ApplicationRepository(session).letter_brief(vacancy_id)
     return VacancyCard(
         vacancy=_with_sources(VacancyRead.model_validate(vacancy), vacancy.sources),
+        manual_apply=await _manual_apply(session, vacancy, vacancy.sources),
         match=summary,
         requirements=requirements,
-        letter=await ApplicationRepository(session).letter_brief(vacancy_id),
+        letter=letter,
     )
+
+
+async def _manual_apply(
+    session: AsyncSession, vacancy: Vacancy, rows: Sequence[VacancySource]
+) -> ManualApply | None:
+    """The post and contact to apply through by hand, and the text to copy.
+
+    Only for a source row that names a post to answer (``_derived.post_url``,
+    which the Telegram connector writes). The message is composed here and
+    shown; it is never sent by anything in this project.
+    """
+    for row in rows:
+        derived = row.raw.get("_derived") if isinstance(row.raw, dict) else None
+        if not isinstance(derived, dict) or not isinstance(derived.get("post_url"), str):
+            continue
+        contact = derived.get("apply_contact")
+        letter = await session.scalar(
+            select(Application.cover_letter)
+            .where(Application.vacancy_id == vacancy.id, Application.cover_letter.is_not(None))
+            .order_by(Application.created_at, Application.id)
+            .limit(1)
+        )
+        channel = derived.get("channel")
+        opening = (
+            f"Здравствуйте! Пишу по вакансии «{vacancy.title}»"
+            + (f" из канала @{channel}" if isinstance(channel, str) else "")
+            + f": {derived['post_url']}"
+        )
+        message = opening + ("\n\n" + letter if isinstance(letter, str) and letter else "")
+        return ManualApply(
+            post_url=derived["post_url"],
+            contact=contact if isinstance(contact, str) else None,
+            message=message,
+        )
+    return None
 
 
 def _with_sources(read: VacancyRead, rows: Sequence[VacancySource]) -> VacancyRead:

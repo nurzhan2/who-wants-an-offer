@@ -290,6 +290,21 @@ class LetterBrief(BaseModel):
     outcome: str | None = None
 
 
+class ManualApply(BaseModel):
+    """How a person applies to a vacancy no agent applies to: a post and a contact.
+
+    Built for Telegram (phase 22), where "apply" is the post's link and the
+    @handle or e-mail it names. Nothing in this project sends the message: the
+    card shows it to copy, and the owner writes to the recruiter themselves.
+    """
+
+    post_url: str
+    contact: str | None = None
+    #: Ready to copy: a greeting naming the vacancy and the post, then the
+    #: stored letter when there is one.
+    message: str
+
+
 class VacancyCard(BaseModel):
     """One vacancy, its match and its documents — the row expanded.
 
@@ -303,6 +318,8 @@ class VacancyCard(BaseModel):
     vacancy: VacancyRead
     match: MatchSummary | None = None
     requirements: RequirementBreakdown = Field(default_factory=RequirementBreakdown)
+    #: Set for a vacancy whose source names a contact to write to (Telegram).
+    manual_apply: ManualApply | None = None
     letter: LetterBrief | None = None
 
 

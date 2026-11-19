@@ -1,11 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 
-import { apiSend, apiUpload } from "@/api/client";
-import { Button } from "@/components/ui";
-import { useProfiles } from "@/hooks/useProfiles";
-import { explain } from "@/lib/errors";
-import type { ParseStatus, Profile } from "@/types/api";
+import { apiSend, apiUpload } from '@/api/client'
+import { Button } from '@/components/ui'
+import { useProfiles } from '@/hooks/useProfiles'
+import { explain } from '@/lib/errors'
+import type { ParseStatus, Profile } from '@/types/api'
 
 /**
  * Резюме по трекам — several resumes live at once (phase 22).
@@ -21,102 +21,96 @@ import type { ParseStatus, Profile } from "@/types/api";
  * new version of itself once the new file has parsed.
  */
 
-const ACCEPT = ".pdf,.docx,.txt,.md";
-const HH_ID = /^[0-9a-f]{38}$/;
-const SLUG = /^[a-z0-9][a-z0-9_-]{0,49}$/;
+const ACCEPT = '.pdf,.docx,.txt,.md'
+const HH_ID = /^[0-9a-f]{38}$/
+const SLUG = /^[a-z0-9][a-z0-9_-]{0,49}$/
 
 interface Accepted {
-  profile_id: string;
-  parse_status: ParseStatus;
-  slug: string | null;
-  filename: string | null;
+  profile_id: string
+  parse_status: ParseStatus
+  slug: string | null
+  filename: string | null
 }
 
 interface Staged {
-  file: File;
-  slug: string;
-  track: string;
+  file: File
+  slug: string
+  track: string
 }
 
 function slugFrom(name: string): string {
   const base = name
-    .replace(/\.[^.]+$/, "")
+    .replace(/\.[^.]+$/, '')
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return SLUG.test(base) ? base.slice(0, 50) : "";
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return SLUG.test(base) ? base.slice(0, 50) : ''
 }
 
 export function ProfilesPanel({
   selected,
   onSelect,
 }: {
-  selected: string | null;
-  onSelect: (profileId: string) => void;
+  selected: string | null
+  onSelect: (profileId: string) => void
 }) {
-  const client = useQueryClient();
-  const profiles = useProfiles();
-  const picker = useRef<HTMLInputElement>(null);
-  const [staged, setStaged] = useState<Staged[]>([]);
+  const client = useQueryClient()
+  const profiles = useProfiles()
+  const picker = useRef<HTMLInputElement>(null)
+  const [staged, setStaged] = useState<Staged[]>([])
 
   const refresh = () => {
-    for (const key of [["profile"], ["overview"], ["vacancies"], ["vacancy"]]) {
-      void client.invalidateQueries({ queryKey: key });
+    for (const key of [['profile'], ['overview'], ['vacancies'], ['vacancy']]) {
+      void client.invalidateQueries({ queryKey: key })
     }
-  };
+  }
 
   const batch = useMutation({
     mutationFn: (items: Staged[]) => {
-      const form = new FormData();
-      for (const item of items) form.append("files", item.file);
+      const form = new FormData()
+      for (const item of items) form.append('files', item.file)
       form.append(
-        "meta",
+        'meta',
         JSON.stringify(
           items.map((item) => ({
             slug: item.slug || null,
             track: item.track.trim() || null,
           })),
         ),
-      );
-      return apiUpload<{ items: Accepted[] }>("/api/v1/resume/batch", form);
+      )
+      return apiUpload<{ items: Accepted[] }>('/api/v1/resume/batch', form)
     },
     onSuccess: () => {
-      setStaged([]);
-      refresh();
+      setStaged([])
+      refresh()
     },
-  });
+  })
 
   const replace = useMutation({
     mutationFn: ({ slug, file }: { slug: string; file: File }) => {
-      const form = new FormData();
-      form.append("file", file);
-      return apiUpload<Accepted>(
-        `/api/v1/resume/upload?replace=${encodeURIComponent(slug)}`,
-        form,
-      );
+      const form = new FormData()
+      form.append('file', file)
+      return apiUpload<Accepted>(`/api/v1/resume/upload?replace=${encodeURIComponent(slug)}`, form)
     },
     onSuccess: refresh,
-  });
+  })
 
   const patch = useMutation({
     mutationFn: ({ id, changes }: { id: string; changes: Partial<Profile> }) =>
-      apiSend<Profile>("PATCH", `/api/v1/profile/${id}`, changes),
+      apiSend<Profile>('PATCH', `/api/v1/profile/${id}`, changes),
     onSuccess: refresh,
-  });
+  })
 
-  const stagedValid = staged.every(
-    (item) => item.slug === "" || SLUG.test(item.slug),
-  );
+  const stagedValid = staged.every((item) => item.slug === '' || SLUG.test(item.slug))
 
   return (
     <section className="border border-hairline p-card">
       <p className="font-semibold">Резюме по трекам</p>
       <p className="mt-1 max-w-2xl text-small text-muted">
-        Каждая вакансия оценивается по всем включённым резюме и идёт от того, с
-        которым совпала лучше: им пишется письмо и им отправляется отклик. При
-        равной оценке выигрывает меньший приоритет. Без hh-id резюме агент не
-        знает, какое выбрать в форме hh, — такие вакансии уходят в «посмотреть
-        руками».
+        Каждая вакансия оценивается по всем включённым резюме и идёт от того, с которым совпала
+        лучше: им пишется письмо и им отправляется отклик. При равной оценке выигрывает меньший
+        приоритет. Без hh-id резюме агент не знает, какое выбрать в форме hh, — такие вакансии
+        уходят в «посмотреть руками».
       </p>
 
       {profiles.isError ? (
@@ -132,13 +126,13 @@ export function ProfilesPanel({
             profile={profile}
             selected={selected === profile.id}
             onSelect={() => {
-              onSelect(profile.id);
+              onSelect(profile.id)
             }}
             onSave={(changes) => {
-              patch.mutate({ id: profile.id, changes });
+              patch.mutate({ id: profile.id, changes })
             }}
             onReplace={(file) => {
-              if (profile.slug) replace.mutate({ slug: profile.slug, file });
+              if (profile.slug) replace.mutate({ slug: profile.slug, file })
             }}
           />
         ))}
@@ -162,32 +156,32 @@ export function ProfilesPanel({
         className="sr-only"
         aria-label="Файлы резюме"
         onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
+          const files = Array.from(event.target.files ?? [])
           setStaged(
             files.map((file) => ({
               file,
               slug: slugFrom(file.name),
-              track: "",
+              track: '',
             })),
-          );
-          event.target.value = "";
+          )
+          event.target.value = ''
         }}
       />
       <div className="mt-4 flex flex-wrap items-center gap-4">
         <Button
           outline
           onClick={() => {
-            picker.current?.click();
+            picker.current?.click()
           }}
         >
           Выбрать файлы
         </Button>
         {staged.length > 0 ? (
           <Button
-            busy={batch.isPending ? "Загружаем…" : false}
+            busy={batch.isPending ? 'Загружаем…' : false}
             disabled={!stagedValid}
             onClick={() => {
-              batch.mutate(staged);
+              batch.mutate(staged)
             }}
           >
             Загрузить {staged.length}
@@ -197,10 +191,7 @@ export function ProfilesPanel({
       {staged.length > 0 ? (
         <ul className="mt-3 flex flex-col gap-2">
           {staged.map((item, index) => (
-            <li
-              key={item.file.name}
-              className="flex flex-wrap items-center gap-2 text-small"
-            >
+            <li key={item.file.name} className="flex flex-wrap items-center gap-2 text-small">
               <span className="min-w-40 break-anywhere">{item.file.name}</span>
               <input
                 className="border border-hairline px-2 py-1"
@@ -208,12 +199,8 @@ export function ProfilesPanel({
                 placeholder="метка: backend"
                 value={item.slug}
                 onChange={(event) => {
-                  const slug = event.target.value;
-                  setStaged((rows) =>
-                    rows.map((row, i) =>
-                      i === index ? { ...row, slug } : row,
-                    ),
-                  );
+                  const slug = event.target.value
+                  setStaged((rows) => rows.map((row, i) => (i === index ? { ...row, slug } : row)))
                 }}
               />
               <input
@@ -222,12 +209,8 @@ export function ProfilesPanel({
                 placeholder="трек: backend, llm, ml…"
                 value={item.track}
                 onChange={(event) => {
-                  const track = event.target.value;
-                  setStaged((rows) =>
-                    rows.map((row, i) =>
-                      i === index ? { ...row, track } : row,
-                    ),
-                  );
+                  const track = event.target.value
+                  setStaged((rows) => rows.map((row, i) => (i === index ? { ...row, track } : row)))
                 }}
               />
             </li>
@@ -240,7 +223,7 @@ export function ProfilesPanel({
         </p>
       ) : null}
     </section>
-  );
+  )
 }
 
 function ProfileRow({
@@ -250,48 +233,41 @@ function ProfileRow({
   onSave,
   onReplace,
 }: {
-  profile: Profile;
-  selected: boolean;
-  onSelect: () => void;
-  onSave: (changes: Partial<Profile>) => void;
-  onReplace: (file: File) => void;
+  profile: Profile
+  selected: boolean
+  onSelect: () => void
+  onSave: (changes: Partial<Profile>) => void
+  onReplace: (file: File) => void
 }) {
-  const file = useRef<HTMLInputElement>(null);
-  const [hhId, setHhId] = useState(profile.hh_resume_id ?? "");
-  const [track, setTrack] = useState(profile.track ?? "");
-  const [priority, setPriority] = useState(String(profile.priority));
-  const hhValid = hhId === "" || HH_ID.test(hhId);
+  const file = useRef<HTMLInputElement>(null)
+  const [hhId, setHhId] = useState(profile.hh_resume_id ?? '')
+  const [track, setTrack] = useState(profile.track ?? '')
+  const [priority, setPriority] = useState(String(profile.priority))
+  const hhValid = hhId === '' || HH_ID.test(hhId)
   const dirty =
-    hhId !== (profile.hh_resume_id ?? "") ||
-    track !== (profile.track ?? "") ||
-    priority !== String(profile.priority);
+    hhId !== (profile.hh_resume_id ?? '') ||
+    track !== (profile.track ?? '') ||
+    priority !== String(profile.priority)
 
   return (
-    <div
-      className={`flex flex-col gap-2 py-3 ${selected ? "font-semibold" : ""}`}
-    >
+    <div className={`flex flex-col gap-2 py-3 ${selected ? 'font-semibold' : ''}`}>
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-small">
-          <input
-            type="radio"
-            name="profile"
-            checked={selected}
-            onChange={onSelect}
-          />
-          <span>{profile.slug ?? "—"}</span>
+          <input type="radio" name="profile" checked={selected} onChange={onSelect} />
+          <span>{profile.slug ?? '—'}</span>
         </label>
         <span className="text-small text-muted">
-          {profile.headline ?? profile.resume_filename ?? "без заголовка"}
-          {profile.parse_status === "pending" ? " · разбирается…" : ""}
-          {profile.parse_status === "failed" ? " · не разобралось" : ""}
+          {profile.headline ?? profile.resume_filename ?? 'без заголовка'}
+          {profile.parse_status === 'pending' ? ' · разбирается…' : ''}
+          {profile.parse_status === 'failed' ? ' · не разобралось' : ''}
         </span>
         <label className="flex items-center gap-1 text-small">
           <input
             type="checkbox"
             checked={profile.is_active}
-            disabled={profile.parse_status !== "ready"}
+            disabled={profile.parse_status !== 'ready'}
             onChange={(event) => {
-              onSave({ is_active: event.target.checked });
+              onSave({ is_active: event.target.checked })
             }}
           />
           включено
@@ -300,30 +276,30 @@ function ProfileRow({
       <div className="flex flex-wrap items-center gap-2 text-small">
         <input
           className="border border-hairline px-2 py-1"
-          aria-label={`Трек ${profile.slug ?? ""}`}
+          aria-label={`Трек ${profile.slug ?? ''}`}
           placeholder="трек"
           value={track}
           onChange={(event) => {
-            setTrack(event.target.value);
+            setTrack(event.target.value)
           }}
         />
         <input
           className="w-20 border border-hairline px-2 py-1"
-          aria-label={`Приоритет ${profile.slug ?? ""}`}
+          aria-label={`Приоритет ${profile.slug ?? ''}`}
           inputMode="numeric"
           value={priority}
           onChange={(event) => {
-            setPriority(event.target.value.replace(/\D/g, ""));
+            setPriority(event.target.value.replace(/\D/g, ''))
           }}
         />
         <input
           className="w-96 max-w-full border border-hairline px-2 py-1 font-mono"
-          aria-label={`hh-id резюме ${profile.slug ?? ""}`}
+          aria-label={`hh-id резюме ${profile.slug ?? ''}`}
           aria-invalid={!hhValid}
           placeholder="hh-id резюме: 38 символов из ссылки hh.kz/resume/…"
           value={hhId}
           onChange={(event) => {
-            setHhId(event.target.value.trim().toLowerCase());
+            setHhId(event.target.value.trim().toLowerCase())
           }}
         />
         <button
@@ -332,10 +308,10 @@ function ProfileRow({
           disabled={!dirty || !hhValid}
           onClick={() => {
             onSave({
-              hh_resume_id: hhId === "" ? null : hhId,
-              track: track.trim() === "" ? null : track.trim(),
-              priority: Number(priority || "0"),
-            });
+              hh_resume_id: hhId === '' ? null : hhId,
+              track: track.trim() === '' ? null : track.trim(),
+              priority: Number(priority || '0'),
+            })
           }}
         >
           Сохранить
@@ -344,7 +320,7 @@ function ProfileRow({
           type="button"
           className="underline"
           onClick={() => {
-            file.current?.click();
+            file.current?.click()
           }}
         >
           Заменить файл
@@ -354,11 +330,11 @@ function ProfileRow({
           type="file"
           accept={ACCEPT}
           className="sr-only"
-          aria-label={`Новая версия резюме ${profile.slug ?? ""}`}
+          aria-label={`Новая версия резюме ${profile.slug ?? ''}`}
           onChange={(event) => {
-            const chosen = event.target.files?.[0];
-            if (chosen) onReplace(chosen);
-            event.target.value = "";
+            const chosen = event.target.files?.[0]
+            if (chosen) onReplace(chosen)
+            event.target.value = ''
           }}
         />
       </div>
@@ -368,5 +344,5 @@ function ProfileRow({
         </p>
       ) : null}
     </div>
-  );
+  )
 }

@@ -27,6 +27,8 @@ frontend/dist/
 *.pem
 *.key
 telegram.session*
+*.session
+*.session-journal
 
 # Data
 *.db

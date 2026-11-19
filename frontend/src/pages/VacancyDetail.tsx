@@ -1,35 +1,17 @@
-import { href } from "@/app/routes";
-import { fileUrl } from "@/api/documents";
-import { ApplyConfirm } from "@/components/ApplyConfirm";
-import { Freshness } from "@/components/Freshness";
-import {
-  Button,
-  Card,
-  Empty,
-  Failure,
-  Field,
-  Loading,
-  Pill,
-  Score,
-  Section,
-} from "@/components/ui";
-import { useDocumentHistory, useGenerateDocument } from "@/hooks/useDocuments";
-import { useVacancy, useWriteLetter } from "@/hooks/queries";
-import { useFlash } from "@/hooks/useMotion";
-import { count, date, dateTime, plural, salary, score } from "@/lib/format";
-import {
-  EVIDENCE,
-  outcomeLabel,
-  REMOTE,
-  REQUIREMENT_SOURCE,
-  SKIPPED,
-} from "@/lib/labels";
-import type {
-  MatchSummary,
-  RequirementStanding,
-  VacancySource,
-} from "@/types/api";
-import type { GeneratedDocument } from "@/types/documents";
+import { useState } from 'react'
+
+import { href } from '@/app/routes'
+import { fileUrl } from '@/api/documents'
+import { ApplyConfirm } from '@/components/ApplyConfirm'
+import { Freshness } from '@/components/Freshness'
+import { Button, Card, Empty, Failure, Field, Loading, Pill, Score, Section } from '@/components/ui'
+import { useDocumentHistory, useGenerateDocument } from '@/hooks/useDocuments'
+import { useVacancy, useWriteLetter } from '@/hooks/queries'
+import { useFlash } from '@/hooks/useMotion'
+import { count, date, dateTime, plural, salary, score } from '@/lib/format'
+import { EVIDENCE, outcomeLabel, REMOTE, REQUIREMENT_SOURCE, SKIPPED } from '@/lib/labels'
+import type { ManualApply, MatchSummary, RequirementStanding, VacancySource } from '@/types/api'
+import type { GeneratedDocument } from '@/types/documents'
 
 /**
  * One vacancy, and the reason it scores what it scores.
@@ -53,24 +35,21 @@ import type { GeneratedDocument } from "@/types/documents";
  * back with it.
  */
 export function VacancyDetail({ id }: { id: string }) {
-  const { data, isPending, isError, error } = useVacancy(id);
-  const write = useWriteLetter();
-  const cv = useGenerateDocument("cv");
-  const letterWritten = useFlash(write.data?.saved ? write.submittedAt : 0);
-  const cvBuilt = useFlash(cv.data?.delivered ? cv.submittedAt : 0);
+  const { data, isPending, isError, error } = useVacancy(id)
+  const write = useWriteLetter()
+  const cv = useGenerateDocument('cv')
+  const letterWritten = useFlash(write.data?.saved ? write.submittedAt : 0)
+  const cvBuilt = useFlash(cv.data?.delivered ? cv.submittedAt : 0)
 
-  if (isPending) return <Loading what="вакансию" shape="detail" />;
-  if (isError) return <Failure error={error} what="вакансию" />;
+  if (isPending) return <Loading what="вакансию" shape="detail" />
+  if (isError) return <Failure error={error} what="вакансию" />
 
-  const { vacancy, match, requirements, letter } = data;
-  const description = vacancy.description_md ?? vacancy.description_raw;
+  const { vacancy, match, requirements, letter } = data
+  const description = vacancy.description_md ?? vacancy.description_raw
 
   return (
     <div className="rise">
-      <a
-        href={href("vacancies")}
-        className="text-small text-muted underline-offset-4 hover:underline"
-      >
+      <a href={href('vacancies')} className="text-small text-muted underline-offset-4 hover:underline">
         ← ко всем вакансиям
       </a>
 
@@ -78,13 +57,10 @@ export function VacancyDetail({ id }: { id: string }) {
         <div className="min-w-0">
           <h1 className="text-title font-light">{vacancy.title}</h1>
           <p className="mt-3 text-small text-muted">
-            {vacancy.company ?? "без компании"} · {vacancy.city ?? "без города"}{" "}
-            · {REMOTE[vacancy.remote]} ·{" "}
-            {salary(vacancy.salary_min, vacancy.salary_max, vacancy.currency)}
+            {vacancy.company ?? 'без компании'} · {vacancy.city ?? 'без города'} ·{' '}
+            {REMOTE[vacancy.remote]} · {salary(vacancy.salary_min, vacancy.salary_max, vacancy.currency)}
           </p>
-          <p className="mt-1 text-small text-muted">
-            впервые увидели {date(vacancy.first_seen_at)}
-          </p>
+          <p className="mt-1 text-small text-muted">впервые увидели {date(vacancy.first_seen_at)}</p>
           <div className="mt-2">
             <Freshness
               publishedAt={vacancy.published_at}
@@ -105,63 +81,50 @@ export function VacancyDetail({ id }: { id: string }) {
           <ApplyConfirm vacancyId={id} />
           <Button
             outline
-            busy={write.isPending ? "Пишем письмо — до минуты…" : false}
-            done={letterWritten ? "Письмо записано" : false}
+            busy={write.isPending ? 'Пишем письмо — до минуты…' : false}
+            done={letterWritten ? 'Письмо записано' : false}
             onClick={() => {
-              write.mutate({
-                vacancyId: id,
-                force: letter !== null && letter.characters > 0,
-              });
+              write.mutate({ vacancyId: id, force: letter !== null && letter.characters > 0 })
             }}
           >
-            {letter !== null && letter.characters > 0
-              ? "Переписать письмо"
-              : "Написать письмо"}
+            {letter !== null && letter.characters > 0 ? 'Переписать письмо' : 'Написать письмо'}
           </Button>
           <Button
             outline
-            busy={cv.isPending ? "Собираем CV…" : false}
-            done={cvBuilt ? "CV собран" : false}
+            busy={cv.isPending ? 'Собираем CV…' : false}
+            done={cvBuilt ? 'CV собран' : false}
             onClick={() => {
-              cv.mutate(id);
+              cv.mutate(id)
             }}
           >
             CV под эту вакансию
           </Button>
           {letter !== null && letter.characters > 0 ? (
             <span className="text-small text-muted">
-              письмо есть: {count(letter.characters)}{" "}
-              {plural(letter.characters, "знак", "знака", "знаков")}
-              {letter.sent_at
-                ? `, отправлено ${date(letter.sent_at)}`
-                : ", не отправлено"}
-              {letter.outcome ? ` · ${outcomeLabel(letter.outcome) ?? ""}` : ""}
+              письмо есть: {count(letter.characters)}{' '}
+              {plural(letter.characters, 'знак', 'знака', 'знаков')}
+              {letter.sent_at ? `, отправлено ${date(letter.sent_at)}` : ', не отправлено'}
+              {letter.outcome ? ` · ${outcomeLabel(letter.outcome) ?? ''}` : ''}
             </span>
           ) : (
             <span className="text-small text-muted">письма ещё нет</span>
           )}
         </div>
         {cv.isError ? (
-          <p className="mt-4 text-small">
-            Не удалось собрать CV: {cv.error.message}
-          </p>
+          <p className="mt-4 text-small">Не удалось собрать CV: {cv.error.message}</p>
         ) : null}
         {cv.data ? <CvResult document={cv.data} /> : null}
         <CvVersions vacancyId={id} />
         {write.data ? (
           <p className="mt-4 text-small">
             {write.data.saved
-              ? `Письмо сохранено: ${count(write.data.characters)} ${plural(write.data.characters, "знак", "знака", "знаков")}, ${
-                  write.data.from_model
-                    ? "написала модель"
-                    : "собрано по правилам, без модели"
+              ? `Письмо сохранено: ${count(write.data.characters)} ${plural(write.data.characters, 'знак', 'знака', 'знаков')}, ${
+                  write.data.from_model ? 'написала модель' : 'собрано по правилам, без модели'
                 }.`
-              : (SKIPPED[write.data.skipped ?? ""] ?? "Ничего не записано.")}
+              : (SKIPPED[write.data.skipped ?? ''] ?? 'Ничего не записано.')}
           </p>
         ) : null}
-        {write.isError ? (
-          <p className="mt-4 text-small">Не удалось: {String(write.error)}</p>
-        ) : null}
+        {write.isError ? <p className="mt-4 text-small">Не удалось: {String(write.error)}</p> : null}
       </Section>
 
       <Section
@@ -190,20 +153,53 @@ export function VacancyDetail({ id }: { id: string }) {
 
       {match ? <Explanation match={match} /> : null}
 
+      {data.manual_apply ? <ManualApplyBlock apply={data.manual_apply} /> : null}
+
       <Section title="Описание" note="Как его записал коннектор.">
         {description ? (
-          <div className="max-w-3xl whitespace-pre-wrap text-body">
-            {description}
-          </div>
+          <div className="max-w-3xl whitespace-pre-wrap text-body">{description}</div>
         ) : (
-          <Empty>
-            Источник не отдал описание — по этой вакансии есть только заголовок
-            и ссылка.
-          </Empty>
+          <Empty>Источник не отдал описание — по этой вакансии есть только заголовок и ссылка.</Empty>
         )}
       </Section>
     </div>
-  );
+  )
+}
+
+/**
+ * Applying through a Telegram post: the owner writes to the recruiter. Nothing
+ * here sends anything; the button only copies the text.
+ */
+function ManualApplyBlock({ apply }: { apply: ManualApply }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <Section
+      title="Откликнуться вручную"
+      note="Агент не пишет рекрутерам. Скопируйте текст и отправьте сами."
+    >
+      <p className="text-small">
+        Пост:{' '}
+        <a className="underline" href={apply.post_url} target="_blank" rel="noreferrer">
+          {apply.post_url}
+        </a>
+        {apply.contact ? ` · контакт: ${apply.contact}` : ' · контакт в посте не указан'}
+      </p>
+      <pre className="mt-4 max-w-3xl whitespace-pre-wrap border border-hairline p-card text-small">
+        {apply.message}
+      </pre>
+      <button
+        type="button"
+        className="mt-3 underline"
+        onClick={() => {
+          void navigator.clipboard.writeText(apply.message).then(() => {
+            setCopied(true)
+          })
+        }}
+      >
+        {copied ? 'Скопировано' : 'Скопировать текст'}
+      </button>
+    </Section>
+  )
 }
 
 function Column({
@@ -212,16 +208,14 @@ function Column({
   rows,
   strong = false,
 }: {
-  title: string;
-  note: string;
-  rows: RequirementStanding[];
-  strong?: boolean;
+  title: string
+  note: string
+  rows: RequirementStanding[]
+  strong?: boolean
 }) {
   return (
     <Card>
-      <h3
-        className={`text-small uppercase tracking-widest ${strong ? "font-semibold" : ""}`}
-      >
+      <h3 className={`text-small uppercase tracking-widest ${strong ? 'font-semibold' : ''}`}>
         {title}
       </h3>
       <p className="mt-2 text-small text-muted">{note}</p>
@@ -232,7 +226,7 @@ function Column({
           {rows.map((row) => (
             <li key={row.canonical_name}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className={row.is_required ? "font-semibold" : ""}>
+                <span className={row.is_required ? 'font-semibold' : ''}>
                   {row.spelling ?? row.canonical_name}
                 </span>
                 {row.coverage !== null ? (
@@ -244,40 +238,33 @@ function Column({
               {row.evidence ? (
                 <div className="mt-1 text-small text-muted">
                   {EVIDENCE[row.evidence] ?? row.evidence}
-                  {row.evidence_detail ? `: ${row.evidence_detail}` : ""}
+                  {row.evidence_detail ? `: ${row.evidence_detail}` : ''}
                 </div>
               ) : null}
-              {!row.is_required ? (
-                <div className="mt-1 text-small text-muted">не обязательно</div>
-              ) : null}
+              {!row.is_required ? <div className="mt-1 text-small text-muted">не обязательно</div> : null}
               {REQUIREMENT_SOURCE[row.source] ? (
-                <div className="mt-1 text-small text-muted">
-                  {REQUIREMENT_SOURCE[row.source]}
-                </div>
+                <div className="mt-1 text-small text-muted">{REQUIREMENT_SOURCE[row.source]}</div>
               ) : null}
             </li>
           ))}
         </ul>
       )}
     </Card>
-  );
+  )
 }
 
 /** The score taken apart, on the one 0-100 scale everything here uses. */
 function Explanation({ match }: { match: MatchSummary }) {
   const parts: [string, string][] = [
-    ["покрытие обязательных", match.components.skill_coverage_required],
-    ["покрытие желательных", match.components.skill_coverage_nice],
-    ["семантика", match.components.semantic_similarity],
-    ["опыт", match.components.experience_fit],
-    ["домен", match.components.domain_fit],
-    ["логистика", match.components.logistics_fit],
-  ];
+    ['покрытие обязательных', match.components.skill_coverage_required],
+    ['покрытие желательных', match.components.skill_coverage_nice],
+    ['семантика', match.components.semantic_similarity],
+    ['опыт', match.components.experience_fit],
+    ['домен', match.components.domain_fit],
+    ['логистика', match.components.logistics_fit],
+  ]
   return (
-    <Section
-      title="Из чего складывается score"
-      note={`посчитано ${dateTime(match.scored_at)}`}
-    >
+    <Section title="Из чего складывается score" note={`посчитано ${dateTime(match.scored_at)}`}>
       <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-6">
         {parts.map(([label, value]) => (
           <Field key={label} label={label}>
@@ -288,12 +275,12 @@ function Explanation({ match }: { match: MatchSummary }) {
       {match.profile_slug ? (
         <p className="mt-8 max-w-3xl text-small">
           Выиграла резюме «{match.profile_slug}»
-          {match.profile_track ? ` (${match.profile_track})` : ""}
-          {match.runner_up_slug &&
-          match.margin !== null &&
-          match.margin !== undefined
-            ? ` — на ${score(match.margin)} выше, чем «${match.runner_up_slug}» (${score(match.runner_up_score ?? null)})`
-            : " — других включённых резюме нет"}
+          {match.profile_track ? ` (${match.profile_track})` : ''}
+          {match.runner_up_slug && match.margin !== null && match.margin !== undefined
+            ? ` — на ${score(match.margin)} выше, чем «${match.runner_up_slug}» (${score(
+                match.runner_up_score ?? null,
+              )})`
+            : ' — других включённых резюме нет'}
           . Письмо и отклик — от этого резюме.
         </p>
       ) : null}
@@ -309,8 +296,9 @@ function Explanation({ match }: { match: MatchSummary }) {
         </ul>
       ) : null}
     </Section>
-  );
+  )
 }
+
 
 /**
  * What came back from a CV generation, in three sentences at most.
@@ -320,7 +308,7 @@ function Explanation({ match }: { match: MatchSummary }) {
  * link, because the file the server named is the thing the person wanted.
  */
 /** The one source the agent applies through; everywhere else a person does. */
-const AGENT_SOURCE = "hh";
+const AGENT_SOURCE = 'hh'
 
 /**
  * One link per posting this vacancy was deduplicated from, named by its source
@@ -331,39 +319,32 @@ const AGENT_SOURCE = "hh";
  * anyway. The first is the fullest; a seed row is named as one and not linked.
  */
 function Sources({ sources }: { sources: VacancySource[] }) {
-  if (sources.length === 0) return null;
-  const manual = !sources.some(
-    (source) => source.source_slug === AGENT_SOURCE && !source.is_seed,
-  );
+  if (sources.length === 0) return null
+  const manual = !sources.some((source) => source.source_slug === AGENT_SOURCE && !source.is_seed)
   return (
     <div className="mt-4 flex flex-col gap-2">
       <div className="flex flex-wrap gap-3">
         {sources.map((source) => {
           const label = source.publisher
             ? `${source.source_slug} → ${source.publisher}`
-            : source.source_slug;
+            : source.source_slug
           return source.is_seed ? (
             <Pill key={source.id}>{label} · тестовая запись</Pill>
           ) : (
-            <a
-              key={source.id}
-              href={source.url}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a key={source.id} href={source.url} target="_blank" rel="noreferrer">
               <Pill strong={source.is_primary}>{label} ↗</Pill>
             </a>
-          );
+          )
         })}
       </div>
       {manual ? (
         <p className="text-small text-muted">
-          Автоотклик работает только для hh. Здесь откликаетесь сами: откройте
-          оригинал и приложите документы, собранные ниже.
+          Автоотклик работает только для hh. Здесь откликаетесь сами: откройте оригинал и приложите
+          документы, собранные ниже.
         </p>
       ) : null}
     </div>
-  );
+  )
 }
 
 /**
@@ -374,39 +355,34 @@ function Sources({ sources }: { sources: VacancySource[] }) {
  * the link, and the components that list versions were not mounted anywhere.
  */
 function CvVersions({ vacancyId }: { vacancyId: string }) {
-  const history = useDocumentHistory(vacancyId, "cv", true);
-  if (!history.data || history.data.length === 0) return null;
-  const versions = [...history.data].sort((a, b) => b.version - a.version);
+  const history = useDocumentHistory(vacancyId, 'cv', true)
+  if (!history.data || history.data.length === 0) return null
+  const versions = [...history.data].sort((a, b) => b.version - a.version)
   return (
     <div className="mt-4 text-small">
       <p className="text-muted">Собранные CV для этой вакансии:</p>
       <ul className="mt-1 space-y-1">
         {versions.map((version) => (
           <li key={version.id}>
-            <a
-              href={fileUrl(version.id)}
-              className="underline underline-offset-4"
-            >
+            <a href={fileUrl(version.id)} className="underline underline-offset-4">
               CV, версия {version.version}
             </a>
             <span className="text-muted">
-              {" "}
+              {' '}
               · {dateTime(version.created_at)} · ATS {version.ats_score}
             </span>
           </li>
         ))}
       </ul>
     </div>
-  );
+  )
 }
 
 function CvResult({ document }: { document: GeneratedDocument }) {
   if (!document.delivered || document.document_id === null) {
     return (
       <div className="mt-4 text-small">
-        <p>
-          CV не выдан: {document.reason_ru ?? document.reason ?? "без причины"}
-        </p>
+        <p>CV не выдан: {document.reason_ru ?? document.reason ?? 'без причины'}</p>
         {document.hard_rules.length > 0 ? (
           <ul className="mt-2 text-muted">
             {document.hard_rules.map((rule) => (
@@ -415,19 +391,16 @@ function CvResult({ document }: { document: GeneratedDocument }) {
           </ul>
         ) : null}
       </div>
-    );
+    )
   }
 
   return (
     <p className="mt-4 text-small">
-      <a
-        href={fileUrl(document.document_id)}
-        className="underline underline-offset-4"
-      >
-        {document.filename ?? "CV"}
+      <a href={fileUrl(document.document_id)} className="underline underline-offset-4">
+        {document.filename ?? 'CV'}
       </a>
-      {document.version === null ? "" : ` · версия ${String(document.version)}`}
-      {document.review ? ` · ATS ${String(document.review.ats.score)}` : ""}
+      {document.version === null ? '' : ` · версия ${String(document.version)}`}
+      {document.review ? ` · ATS ${String(document.review.ats.score)}` : ''}
     </p>
-  );
+  )
 }

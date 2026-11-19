@@ -270,11 +270,19 @@ export interface VacancySource {
   is_seed: boolean
 }
 
+/** How to apply by hand through a post (Telegram): nothing here sends it. */
+export interface ManualApply {
+  post_url: string
+  contact: string | null
+  message: string
+}
+
 export interface VacancyCard {
   vacancy: VacancyRead
   match: MatchSummary | null
   requirements: RequirementBreakdown
   letter: LetterBrief | null
+  manual_apply?: ManualApply | null
 }
 
 // ── the board ────────────────────────────────────────────────────────

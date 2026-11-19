@@ -1,0 +1,34 @@
+# Public Telegram channels the `telegram` source reads, by @username, without
+# joining them. Phase 22.
+#
+# HONESTY NOTE: this starter list was written from memory in a container with
+# no route to Telegram, so not one entry has been checked. Every entry is
+# `verified: false`. The first run checks each one: a username that resolves to
+# nothing is logged as `sources.telegram.channel_missing`, and a channel whose
+# newest post is older than 30 days as `sources.telegram.channel_dead`. Then
+#   uv run python scripts/prune_telegram_channels.py          # dry run, prints
+#   uv run python scripts/prune_telegram_channels.py --apply  # rewrites this file
+# removes them, printing each one it removes — never silently.
+#
+# Fields: username (without @), region (kz | ru | cis | world), language
+# (ru | en | kk), kind (jobs | freelance | relocation), stack (free list).
+channels:
+  # ── Kazakhstan ──────────────────────────────────────────────────────
+  - {username: itjobs_kz, region: kz, language: ru, kind: jobs, stack: [it], verified: false}
+  - {username: kz_it_jobs, region: kz, language: ru, kind: jobs, stack: [it], verified: false}
+  - {username: almaty_it_jobs, region: kz, language: ru, kind: jobs, stack: [it], verified: false}
+  - {username: astanahub, region: kz, language: ru, kind: jobs, stack: [it], verified: false}
+  # ── Russia and CIS ──────────────────────────────────────────────────
+  - {username: pythonrabota, region: ru, language: ru, kind: jobs, stack: [python], verified: false}
+  - {username: python_job_interview, region: ru, language: ru, kind: jobs, stack: [python], verified: false}
+  - {username: djangojobi, region: ru, language: ru, kind: jobs, stack: [python, django], verified: false}
+  - {username: jobforjunior, region: cis, language: ru, kind: jobs, stack: [it, junior], verified: false}
+  - {username: habr_career, region: ru, language: ru, kind: jobs, stack: [it], verified: false}
+  - {username: getmatch, region: ru, language: ru, kind: relocation, stack: [it], verified: false}
+  - {username: ds_jobs, region: cis, language: ru, kind: jobs, stack: [ml, data], verified: false}
+  - {username: forpython, region: cis, language: ru, kind: jobs, stack: [python], verified: false}
+  # ── Remote and worldwide ────────────────────────────────────────────
+  - {username: remocate, region: world, language: ru, kind: relocation, stack: [it, remote], verified: false}
+  - {username: relocateme, region: world, language: en, kind: relocation, stack: [it], verified: false}
+  - {username: remote_it_jobs, region: world, language: en, kind: jobs, stack: [it, remote], verified: false}
+  - {username: ai_ml_jobs, region: world, language: en, kind: jobs, stack: [ai, ml, llm], verified: false}

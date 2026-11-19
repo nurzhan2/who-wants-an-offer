@@ -51,3 +51,19 @@
 - Токенное ведро — на источник, а не на хост, оставлено как есть · это строже «0,25 на хост», а ускоряться ТЗ запрещает · `test_every_hh_host_shares_one_pace`
 - В `night.cities` hh.ru получил `weight: 2`, последним · ночь сначала тратится на KZ; вес — решение, не замер · тест файла
 - Дедуп hh.kz/hh.ru — общий `(hh, external_id)` и fingerprint · id у hh общие · `test_one_vacancy_on_both_hosts_is_one_vacancy`
+
+## Фаза C — Telegram
+
+- `access_mode = API` с `terms_url` core.telegram.org/api/terms и выжимкой условий в докстринге · это MTProto, а не страницы; robots.txt неприменим, правило реестра для API выполнено · `test_the_source_registers_with_its_terms`
+- `telethon` — зависимость проекта, не extra · коннектор запускается и из процесса сервера (кнопки дашборда); импорт ленивый, без настроек источник неактивен · `test_without_configuration_the_source_is_inactive`
+- Чтение за протоколом `ChannelReader`, Telethon — только в `_telegram_client.py`, два вызова (`get_entity`, `get_messages`) · узкая поверхность и тесты без сети/сессии · `test_sources_telegram.py`
+- `flood_sleep_threshold=0`: FloodWait ждём сами ровно столько, сколько сказано, один раз, пишем в отчёт; второй — пропуск канала; > 15 мин — не ждём · ТЗ «без ретраев поверх» · `test_a_flood_wait_is_waited_exactly_once_and_reported`, `test_a_second_flood_wait_skips_the_channel_without_more_retries`
+- `last_message_id` двигается только после `record_progress` · как у hh: позиция не должна обгонять записанное · `test_the_watermark_moves_only_once_the_postings_are_durable`
+- Эвристика: слово вакансии И (контакт ИЛИ деньги); соискатели/дайджесты/реклама — сразу нет · дешёвый этап должен ошибаться в сторону пропуска поста к модели · `test_the_heuristic_keeps_job_posts_and_drops_the_rest`
+- Между эвристикой и моделью — ключевые слова плана · Java-вакансия в общем IT-канале не стоит вызова модели для Python-профиля · `test_a_run_yields_vacancies_and_reports_what_the_filter_cut` (2 вызова на 6 постов)
+- Нормализатор: в проекте нет LLM-нормализатора вакансий, есть `to_vacancy` · LLM-разбор поста — новый промпт `parse_vacancy_post.md` + `ParsedPost`, дальше обычный `to_vacancy`; фолбэк по правилам · `test_a_failing_model_falls_back_to_the_rules`
+- Стартовые 16 каналов — по памяти, `verified: false` · сеть к Telegram закрыта, проверить нельзя; первый прогон помечает мёртвые/ненайденные, скрипт удаляет их из yaml с печатью · `test_dead_and_missing_channels_are_named`
+- Мёртвые каналы удаляет скрипт, а не коннектор · коннектор не переписывает собственную конфигурацию во время прогона; ТЗ «не молча» выполняется печатью каждого · `scripts/prune_telegram_channels.py`
+- Отклик: `ManualApply` в карточке — пост, контакт, текст для копирования (приветствие + письмо) · ТЗ п. 5; ничего не отправляется · `test_the_card_offers_the_post_the_contact_and_a_message_to_copy`
+- Вход: `python -m app.sources.telegram_login`, телефон через `input`, код и пароль через `getpass`, ничего не логируется; путь сессии внутри репозитория — отказ; права 600 · STOP 1 · ручная проверка невозможна без номера
+- **STOP 1 (Telegram)**: нужен номер владельца, код и `api_id/api_hash` с my.telegram.org. Всё остальное сделано.
