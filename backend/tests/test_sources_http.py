@@ -417,6 +417,12 @@ def test_redact_removes_a_key_from_a_query_parameter_and_from_a_path_segment() -
     assert redact(httpx.URL(f"{HOST}/search?token={SECRET}")) == f"{HOST}/search?token={REDACTED}"
 
 
+def test_redact_also_hides_the_account_identifiers_adzuna_and_careerjet_send() -> None:
+    """Not keys, but they name the owner's account with the vendor."""
+    assert redact(f"{HOST}/s?app_id=42&q=py") == f"{HOST}/s?app_id={REDACTED}&q=py"
+    assert redact(f"{HOST}/s?affid=abc&q=py") == f"{HOST}/s?affid={REDACTED}&q=py"
+
+
 # -- retries -----------------------------------------------------------
 
 

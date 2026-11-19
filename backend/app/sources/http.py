@@ -153,7 +153,20 @@ CHALLENGE_PATHS: dict[str, tuple[str, ...]] = {
 #: line or a cache envelope — jooble puts its key in the path, and a cache file
 #: is a plain file on a developer's disk.
 SECRET_PARAMS: frozenset[str] = frozenset(
-    {"key", "app_key", "apikey", "api_key", "token", "access_token", "secret"}
+    {
+        "key",
+        "app_key",
+        "apikey",
+        "api_key",
+        "token",
+        "access_token",
+        "secret",
+        # Identifiers rather than keys, but each names the owner's account with
+        # a vendor (adzuna's app_id, careerjet's affiliate id), and a log line
+        # or an error message is no place for either.
+        "app_id",
+        "affid",
+    }
 )
 
 REDACTED = "***"
