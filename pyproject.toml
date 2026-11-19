@@ -193,6 +193,11 @@ known-first-party = ["app", "factories", "helpers"]
 "backend/app/sources/query_planner.py" = ["RUF001", "RUF002"]
 "backend/app/sources/remotive.py" = ["RUF001", "RUF002"]
 "backend/app/sources/arbeitnow.py" = ["RUF001", "RUF002"]
+# The ATS connectors' failures reach the dashboard in Russian, next to the
+# vendors' Latin board tokens and file names, which mixes scripts in one string.
+"backend/app/sources/ats/*.py" = ["RUF001", "RUF002"]
+"backend/tests/test_sources_ats.py" = ["RUF001", "RUF002"]
+"scripts/verify_ats_boards.py" = ["RUF001", "RUF002"]
 "backend/app/pipeline/runner.py" = ["RUF001", "RUF002"]
 # The contact block is read out of Russian resumes and written back by a
 # Russian-speaking owner, so the fixtures, the sample text and the rejected

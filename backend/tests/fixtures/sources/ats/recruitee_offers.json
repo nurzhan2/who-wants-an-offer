@@ -1,0 +1,49 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE. Shaped after Recruitee's Careers Site API documentation (GET https://{company}.recruitee.com/api/offers/) as known when written; the container's network was closed. Companies, ids and texts are invented. Re-record from a live board on the first run with network access. The third entry is malformed (id is not a number).",
+  "offers": [
+    {
+      "id": 1500001,
+      "slug": "golang-developer",
+      "title": "Golang Developer",
+      "description": "<p>High-load services in Go.</p>",
+      "requirements": "<ul><li>Go</li><li>gRPC</li><li>PostgreSQL</li></ul>",
+      "location": "Riga, Latvia",
+      "city": "Riga",
+      "country": "Latvia",
+      "country_code": "LV",
+      "remote": false,
+      "hybrid": true,
+      "on_site": false,
+      "careers_url": "https://exampleco.recruitee.com/o/golang-developer",
+      "careers_apply_url": "https://exampleco.recruitee.com/o/golang-developer/c/new",
+      "department": "Engineering",
+      "employment_type_code": "fulltime",
+      "company_name": "Example Co",
+      "status": "published",
+      "published_at": "2026-11-10 09:00:00 UTC",
+      "tags": ["backend"],
+      "salary": {"min": "4000", "max": "6000", "currency": "EUR", "period": "month"}
+    },
+    {
+      "id": 1500002,
+      "slug": "python-engineer-remote",
+      "title": "Python Engineer",
+      "description": "<p>FastAPI and asyncio.</p>",
+      "requirements": null,
+      "location": "Remote",
+      "city": "",
+      "country": "",
+      "remote": true,
+      "careers_url": "https://exampleco.recruitee.com/o/python-engineer-remote",
+      "department": "Engineering",
+      "employment_type_code": "fulltime",
+      "status": "published",
+      "tags": null
+    },
+    {
+      "id": "not-a-number",
+      "title": "Malformed offer",
+      "careers_url": "https://exampleco.recruitee.com/o/malformed"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "id": "5b2f6c1e-0001-4a7e-9c11-aaaaaaaaaaaa",
+    "text": "Backend Engineer, Payments",
+    "categories": {
+      "commitment": "Full-time",
+      "department": "Engineering",
+      "location": "Remote",
+      "team": "Payments",
+      "allLocations": ["Remote"]
+    },
+    "country": "US",
+    "workplaceType": "remote",
+    "createdAt": 1762300800000,
+    "description": "<div>We move money for millions of users.</div>",
+    "descriptionPlain": "We move money for millions of users.",
+    "lists": [
+      {"text": "What you'll need", "content": "<li>Python or Go</li><li>PostgreSQL</li>"},
+      {"text": "Nice to have", "content": "<li>Kafka</li>"}
+    ],
+    "additional": "<div>We offer equity &amp; a home-office budget.</div>",
+    "additionalPlain": "We offer equity & a home-office budget.",
+    "hostedUrl": "https://jobs.lever.co/exampleco/5b2f6c1e-0001-4a7e-9c11-aaaaaaaaaaaa",
+    "applyUrl": "https://jobs.lever.co/exampleco/5b2f6c1e-0001-4a7e-9c11-aaaaaaaaaaaa/apply",
+    "salaryRange": {"currency": "USD", "interval": "per-year-salary", "min": 120000, "max": 160000}
+  },
+  {
+    "id": "5b2f6c1e-0002-4a7e-9c11-bbbbbbbbbbbb",
+    "text": "Account Executive",
+    "categories": {
+      "commitment": "Full-time",
+      "department": "Sales",
+      "location": "London",
+      "team": "EMEA Sales",
+      "allLocations": ["London"]
+    },
+    "country": "GB",
+    "workplaceType": "hybrid",
+    "createdAt": 1762214400000,
+    "description": "<div>Close deals with enterprise customers.</div>",
+    "lists": [],
+    "additional": null,
+    "hostedUrl": "https://jobs.lever.co/exampleco/5b2f6c1e-0002-4a7e-9c11-bbbbbbbbbbbb",
+    "applyUrl": "https://jobs.lever.co/exampleco/5b2f6c1e-0002-4a7e-9c11-bbbbbbbbbbbb/apply"
+  },
+  {
+    "id": "5b2f6c1e-0003-4a7e-9c11-cccccccccccc",
+    "categories": {"location": "Remote"},
+    "description": "<div>Malformed: no text, no hostedUrl.</div>"
+  }
+]
