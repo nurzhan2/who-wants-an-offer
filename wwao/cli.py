@@ -9,6 +9,9 @@
     python -m wwao outcomes           что hh отвечает на уже отправленное
     python -m wwao watch              выполнять запросы дашборда, которым нужен агент
     python -m wwao up                 поднять базу, сервер и дашборд, затем ждать запросов
+    python -m wwao daily              день целиком и сводка в Telegram; ничего не отправляет
+    python -m wwao install-schedule   задача Планировщика Windows на 08:30
+    python -m wwao uninstall-schedule убрать её
 
 **Every subcommand is a child process, and that is the design rather than an
 implementation detail.** ``backend/`` and ``agent/`` must not meet: the crawler
@@ -103,6 +106,7 @@ from pathlib import Path
 from typing import Final, TextIO, final
 
 from wwao import chain as chain_command
+from wwao import schedule
 from wwao import up as stack
 from wwao import watch as watch_loop
 from wwao.console import encoding_of, harden, printable
@@ -199,6 +203,12 @@ WRAPPED: Final[tuple[Wrapped, ...]] = (
         script=SCRIPTS / "run_matching.py",
         summary="посчитать соответствие вакансий профилю",
         missing="Скоринг живёт в scripts/run_matching.py.",
+    ),
+    Wrapped(
+        name="daily",
+        script=SCRIPTS / "daily.py",
+        summary="день целиком: сбор, эмбеддинги, подбор по всем резюме, письма, сводка в Telegram",
+        missing="Ежедневный прогон живёт в scripts/daily.py.",
     ),
     Wrapped(
         name="letters",
@@ -396,6 +406,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="не открывать дашборд в браузере",
     )
+    install = subparsers.add_parser(
+        "install-schedule",
+        help="создать задачу Планировщика Windows: wwao daily каждый день (по умолчанию 08:30)",
+    )
+    install.add_argument("--at", default=schedule.DEFAULT_AT, help="местное время ЧЧ:ММ")
+    subparsers.add_parser("uninstall-schedule", help="удалить эту задачу Планировщика")
     return parser
 
 
@@ -460,6 +476,10 @@ def main(
         )
     if args.command == "up":
         return _up(args, src=src, out=out, err=err)
+    if args.command == "install-schedule":
+        return schedule.install(repo=REPO_ROOT, at=str(args.at), run=run, out=out, err=err)
+    if args.command == "uninstall-schedule":
+        return schedule.uninstall(run=run, out=out, err=err)
     return _apply(args, run=run, src=src, out=out, err=err)
 
 
