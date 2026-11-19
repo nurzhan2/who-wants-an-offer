@@ -52,7 +52,7 @@ from app.matching import embeddings
 from app.resume import profile_builder
 from app.resume.extractor import ExtractedDocument
 from app.schemas.llm import ExtractedLanguage, ExtractedSkill, ProfileExtraction, WorkPeriod
-from factories import make_profile
+from factories import SYNTHETIC_HH_RESUME_ID, make_profile
 
 #: Fixed so "still employed" and staleness have a reproducible answer.
 TODAY = date(2026, 9, 1)
@@ -289,6 +289,7 @@ async def build(
     answer: ProfileExtraction | Exception,
     *,
     document: ExtractedDocument | None = None,
+    replaces: UUID | None = None,
 ) -> profile_builder.BuildResult:
     """Run the pipeline against a stand-in model."""
     router, _ = stub_router(answer)
@@ -298,6 +299,7 @@ async def build(
         profile_id=profile_id,
         router=router,
         today=TODAY,
+        replaces=replaces,
     )
 
 
@@ -383,19 +385,59 @@ async def test_a_vector_of_the_configured_width_is_stored(
     assert any(value != 0.0 for value in embedding)
 
 
-async def test_a_finished_build_retires_every_other_profile(
+async def test_a_finished_build_leaves_every_other_profile_active(
     db_session: AsyncSession, profiles: ProfileRepository, pending_id: UUID, fake_embeddings: None
 ) -> None:
-    """Uploading a new resume supersedes the old profile. Two active profiles
-    would make ``get_active`` pick by creation order, so which resume the
-    dashboard scores against would depend on a timestamp."""
+    """Since phase 22 an upload adds a resume rather than superseding one: the
+    owner keeps one per track and every vacancy is scored against each. Before
+    it, this test asserted the opposite."""
     previous = await profiles.create(make_profile(name="Previous"))
     previous_id = previous.id
-    assert previous.is_active is True
 
     await build(db_session, pending_id, make_extraction())
 
-    assert (await stored(profiles, db_session, previous_id)).is_active is False
+    assert (await stored(profiles, db_session, previous_id)).is_active is True
+    assert (await stored(profiles, db_session, pending_id)).is_active is True
+
+
+async def test_a_replacement_retires_only_the_profile_it_names_and_takes_its_name(
+    db_session: AsyncSession, profiles: ProfileRepository, pending_id: UUID, fake_embeddings: None
+) -> None:
+    """``?replace=backend``: the named profile steps down once the new one has
+    parsed, and hands over its slug, track, priority, hh id and titles. A third
+    profile is not touched."""
+    old = await profiles.create(
+        make_profile(name="Old", slug="backend", track="backend", priority=3)
+    )
+    old.target_titles = ["Python Developer"]
+    other = await profiles.create(make_profile(name="Other", slug="llm"))
+    await db_session.flush()
+    old_id, other_id = old.id, other.id
+
+    await build(db_session, pending_id, make_extraction(), replaces=old_id)
+
+    new = await stored(profiles, db_session, pending_id)
+    assert new.is_active is True
+    assert new.slug == "backend"
+    assert (new.track, new.priority, new.target_titles) == ("backend", 3, ["Python Developer"])
+    assert new.hh_resume_id == SYNTHETIC_HH_RESUME_ID
+    retired = await stored(profiles, db_session, old_id)
+    assert retired.is_active is False
+    assert retired.slug != "backend"
+    assert (await stored(profiles, db_session, other_id)).is_active is True
+
+
+async def test_a_failed_replacement_leaves_the_replaced_profile_live(
+    db_session: AsyncSession, profiles: ProfileRepository, pending_id: UUID, fake_embeddings: None
+) -> None:
+    """A track must not be left with no resume because the new file broke."""
+    old = await profiles.create(make_profile(name="Old", slug="backend"))
+    old_id = old.id
+
+    await build(db_session, pending_id, LLMError("nothing usable"), replaces=old_id)
+
+    kept = await stored(profiles, db_session, old_id)
+    assert (kept.is_active, kept.slug) == (True, "backend")
 
 
 async def test_a_finished_build_activates_the_profile_it_just_wrote(
@@ -413,19 +455,20 @@ async def test_a_finished_build_activates_the_profile_it_just_wrote(
     assert (await stored(profiles, db_session, pending_id)).is_active is True
 
 
-async def test_after_an_upload_exactly_one_profile_is_active(
+async def test_the_default_profile_is_the_lowest_priority_not_the_newest(
     db_session: AsyncSession, profiles: ProfileRepository, pending_id: UUID, fake_embeddings: None
 ) -> None:
-    """The property that matters is the pair, not either half: activating
-    without retiring, or retiring without activating, both leave the dashboard
-    wrong. Asserted through get_active, which is what actually reads it."""
-    await profiles.create(make_profile(name="Previous"))
+    """``default_profile`` answers every one-profile question, and it is chosen
+    by the owner's priority rather than by which upload came last."""
+    first = await profiles.create(make_profile(name="First", priority=0))
+    first_id = first.id
 
     await build(db_session, pending_id, make_extraction())
 
-    active = await profiles.get_active()
-    assert active is not None
-    assert active.id == pending_id
+    default = await profiles.default_profile()
+    assert default is not None
+    assert default.id == first_id
+    assert {profile.id for profile in await profiles.list_active()} == {first_id, pending_id}
 
 
 async def test_a_failed_build_does_not_activate_anything(

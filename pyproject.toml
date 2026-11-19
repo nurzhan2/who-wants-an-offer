@@ -100,6 +100,7 @@ known-first-party = ["app", "factories", "helpers"]
 # The morning crawl report is a screen of Russian printed next to hh's own
 # Latin hostnames and sitemap file names, so every other line mixes scripts.
 "scripts/crawl_report.py" = ["RUF001", "RUF002", "RUF003"]
+"scripts/measure_description_budget.py" = ["RUF001", "RUF002", "RUF003"]
 # A transliteration table IS a homoglyph table: every one of its 33 keys is a
 # Cyrillic letter that ruff correctly points out looks like a Latin one. The
 # protection RUF001 gives is restored as a test instead — see
@@ -232,6 +233,17 @@ known-first-party = ["app", "factories", "helpers"]
 "backend/app/core/config.py" = ["RUF001", "RUF002", "RUF003"]
 "backend/tests/test_autopilot.py" = ["RUF001", "RUF002", "RUF003"]
 "backend/tests/test_freshness.py" = ["RUF001", "RUF002"]
+
+# Phase 22: several resumes at once. These modules answer the owner in Russian
+# about which resume a file replaces and which one a vacancy was won by, naming
+# the slugs and hh's own ids in Latin beside it.
+"backend/app/db/repositories/profile.py" = ["RUF001", "RUF002"]
+"backend/app/services/resume.py" = ["RUF001", "RUF002"]
+"backend/app/api/v1/resume.py" = ["RUF001", "RUF002"]
+"backend/app/matching/best.py" = ["RUF001", "RUF002"]
+"backend/app/services/vacancies.py" = ["RUF001", "RUF002"]
+"backend/app/letters/store.py" = ["RUF001", "RUF002"]
+"backend/tests/test_multi_profile.py" = ["RUF001", "RUF002", "RUF003"]
 
 # Every message this agent prints is read by the person whose account it is
 # about to act on, so all of them are Russian, and RUF001-003 fire on almost

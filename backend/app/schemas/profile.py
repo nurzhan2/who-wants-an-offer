@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from app.db.enums import ParseStatus, RemoteType, Seniority, SkillEvidence, SkillLevel
 from app.schemas.common import CurrencyCode, ReadModel
@@ -45,6 +45,17 @@ def clean_target_titles(titles: list[str]) -> list[str]:
 
 
 TargetTitles = Annotated[list[str], AfterValidator(clean_target_titles)]
+
+#: The owner's handle for one resume: ``backend``, ``llm-2``. Lowercase so two
+#: spellings cannot name two profiles, and URL-safe because it travels in
+#: ``?replace=<slug>``.
+ProfileSlug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,49}$")]
+#: What kind of job a resume is for. Free text, short.
+ProfileTrack = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+#: hh's id of a resume: the 38 lowercase hex characters in
+#: ``hh.kz/resume/<hash>``. Checked here rather than by a constraint, like every
+#: other typed field of this table.
+HHResumeId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{38}$")]
 
 
 def reject_duplicate_skills(skills: list["SkillCreate"] | None) -> None:
@@ -143,6 +154,12 @@ class CandidateProfileCreate(BaseModel):
     #: Rows of their own, so a generated CV can refer to a job rather than
     #: retype one. Written by ``ProfileRepository.replace_experience``.
     experience: list[ExperienceCreate] = Field(default_factory=list)
+    #: How the owner files this resume. The extractor never sets these — the
+    #: upload does — so ``None`` means "leave the column as it is".
+    slug: ProfileSlug | None = None
+    track: ProfileTrack | None = None
+    priority: int | None = Field(default=None, ge=0, le=10_000)
+    hh_resume_id: HHResumeId | None = None
 
     @model_validator(mode="after")
     def _skills_are_unique(self) -> Self:
@@ -169,6 +186,11 @@ class CandidateProfileUpdate(BaseModel):
     #: an empty list returns the search to skill keywords.
     target_titles: TargetTitles | None = None
     is_active: bool | None = None
+    slug: ProfileSlug | None = None
+    track: ProfileTrack | None = None
+    priority: int | None = Field(default=None, ge=0, le=10_000)
+    #: Set to the hash, or send ``null`` explicitly to forget it.
+    hh_resume_id: HHResumeId | None = None
     #: Replaces the whole skill set when present. The extractor is wrong often
     #: enough that hand-correcting skills is a first-class operation, not an
     #: afterthought.
@@ -186,6 +208,29 @@ class ResumeUploadResponse(BaseModel):
 
     profile_id: UUID
     parse_status: ParseStatus
+    #: The slug the profile will answer to once it has parsed.
+    slug: str | None = None
+    #: The profile this upload retires when it parses, if it named one.
+    replaces: UUID | None = None
+    #: The file this answer is about. Set by the batch endpoint, where one
+    #: request carries several.
+    filename: str | None = None
+
+
+class ResumeBatchItem(BaseModel):
+    """How one file of a batch upload is to be filed: its own slug and track."""
+
+    slug: ProfileSlug | None = None
+    track: ProfileTrack | None = None
+    priority: int | None = Field(default=None, ge=0, le=10_000)
+    hh_resume_id: HHResumeId | None = None
+    replace: ProfileSlug | None = None
+
+
+class ResumeBatchResponse(BaseModel):
+    """Answer to a batch upload: one entry per file, in the order they were sent."""
+
+    items: list[ResumeUploadResponse] = Field(default_factory=list)
 
 
 class CandidateProfileRead(ReadModel):
@@ -205,6 +250,11 @@ class CandidateProfileRead(ReadModel):
     salary_currency: str | None
     languages: list[dict[str, Any]]
     is_active: bool
+    #: Always set on a stored profile; optional only for a read built by hand.
+    slug: str | None = None
+    track: str | None = None
+    priority: int = 100
+    hh_resume_id: str | None = None
 
     parse_status: ParseStatus
     #: Why parsing failed, safe to show a user. Never contains resume text.

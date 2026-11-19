@@ -23,6 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.db.enums import ParseStatus
 from app.db.models import CandidateProfile
@@ -50,6 +51,25 @@ class UploadAccepted:
 
     profile_id: UUID
     parse_status: ParseStatus
+    slug: str
+    #: The profile this upload will retire once it has parsed, if it named one.
+    replaces: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UploadTarget:
+    """Which profile an upload becomes: a new one, or the successor of ``replace``.
+
+    ``slug`` and ``replace`` are exclusive in spirit: a replacement takes the
+    replaced profile's slug when it parses, so naming one as well would be two
+    answers to the same question.
+    """
+
+    slug: str | None = None
+    track: str | None = None
+    priority: int | None = None
+    hh_resume_id: str | None = None
+    replace: str | None = None
 
 
 def _audit(document: extractor.ExtractedDocument) -> ATSReport | None:
@@ -80,15 +100,49 @@ def upload_path(profile_id: UUID, source_format: str) -> Path:
     return settings.upload_dir / f"{profile_id}.{source_format}"
 
 
+async def resolve_target(session: AsyncSession, target: UploadTarget) -> UUID | None:
+    """Check an upload's naming before anything is written; return what it replaces.
+
+    A 404 for a ``replace`` nobody answers to and a 409 for a ``slug`` already
+    taken are told to the person who sent the file, now, rather than surfacing
+    as a parse that failed thirty seconds later.
+    """
+    profiles = ProfileRepository(session)
+    if target.replace is not None:
+        if target.slug is not None and target.slug != target.replace:
+            raise ConflictError(
+                "Укажите либо replace, либо slug: заменяющее резюме получает метку заменённого."
+            )
+        replaced = await profiles.get_by_slug(target.replace)
+        if replaced is None:
+            raise NotFoundError(f"Нет профиля с меткой «{target.replace}» — заменять нечего.")
+        return replaced.id
+    if target.slug is not None and await profiles.slug_taken(target.slug):
+        raise ConflictError(
+            f"Профиль «{target.slug}» уже есть. Чтобы заменить его, загрузите файл с "
+            f"?replace={target.slug}."
+        )
+    return None
+
+
 async def accept_upload(
-    session: AsyncSession, *, content: bytes, filename: str
+    session: AsyncSession,
+    *,
+    content: bytes,
+    filename: str,
+    target: UploadTarget | None = None,
 ) -> tuple[UploadAccepted, Path]:
     """Validate an upload, reserve a profile, and stage the file.
 
     Extraction runs here as well as in the task. It is cheap next to the LLM
     call, and doing it now is what turns an .exe renamed to .pdf into an
     immediate 422 instead of a background failure nobody is watching.
+
+    Nothing already live is touched. A ``replace`` target is only remembered
+    here and retired by the background task once the new file has parsed.
     """
+    target = target or UploadTarget()
+    replaces = await resolve_target(session, target)
     document = extractor.extract(content, filename)
     report = await asyncio.to_thread(_audit, document)
 
@@ -99,6 +153,13 @@ async def accept_upload(
         source_format=document.source_format,
         started_at=datetime.now(UTC),
         ats_report=report,
+        # A replacement parses under a placeholder and takes the replaced
+        # profile's slug when it succeeds; the slug is unique, and the old row
+        # still holds it until then.
+        slug=None if replaces is not None else target.slug,
+        track=target.track,
+        priority=target.priority,
+        hh_resume_id=target.hh_resume_id,
     )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -115,7 +176,13 @@ async def accept_upload(
         ats_score=report.score if report else None,
         ats_findings=[f.code.value for f in report.findings] if report else None,
     )
-    return UploadAccepted(profile_id=profile.id, parse_status=ParseStatus.PENDING), path
+    accepted = UploadAccepted(
+        profile_id=profile.id,
+        parse_status=ParseStatus.PENDING,
+        slug=target.replace or profile.slug,
+        replaces=replaces,
+    )
+    return accepted, path
 
 
 def background_failure(exc: Exception) -> str:
@@ -134,7 +201,11 @@ def background_failure(exc: Exception) -> str:
 
 
 async def parse_in_background(
-    profile_id: UUID, path: Path, *, router: LLMRouter | None = None
+    profile_id: UUID,
+    path: Path,
+    *,
+    router: LLMRouter | None = None,
+    replaces: UUID | None = None,
 ) -> None:
     """Do the slow half of the upload.
 
@@ -148,7 +219,7 @@ async def parse_in_background(
         document = extractor.extract(content, path.name)
         async with session_factory() as session:
             result = await profile_builder.build_profile(
-                document, session=session, profile_id=profile_id, router=llm
+                document, session=session, profile_id=profile_id, router=llm, replaces=replaces
             )
             if result.status is ParseStatus.READY:
                 await fill_contacts(session, profile_id)
@@ -166,6 +237,18 @@ async def parse_in_background(
         # Always: a staged file whose task has ended is dead weight, and
         # uploads/ would otherwise grow one resume at a time.
         await asyncio.to_thread(path.unlink, True)
+
+
+async def parse_batch_in_background(jobs: list[tuple[UUID, Path, UUID | None]]) -> None:
+    """Parse a batch of staged uploads one after another.
+
+    Sequential on purpose: each parse is an LLM call and an embedding, and six
+    at once would contend for the same CLI process and CPU. A failure is
+    recorded on its own profile by :func:`parse_in_background` and does not stop
+    the rest.
+    """
+    for profile_id, path, replaces in jobs:
+        await parse_in_background(profile_id, path, replaces=replaces)
 
 
 async def fill_contacts(session: AsyncSession, profile_id: UUID) -> None:

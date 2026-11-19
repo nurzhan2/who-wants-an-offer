@@ -19,6 +19,28 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 
 
 @router.get(
+    "",
+    response_model=list[CandidateProfileRead],
+    summary="Every profile, active ones first in tie-break order",
+)
+async def list_profiles(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[CandidateProfileRead]:
+    """Every resume uploaded, for the profile switcher.
+
+    Active ones first, in the order a tie between them is broken (``priority``,
+    then newest), then the retired ones, newest first. Several are active at
+    once since migration 0018; switching one on or off, renaming it or setting
+    its ``hh_resume_id`` is a ``PATCH /profile/{id}``.
+    """
+    profiles = ProfileRepository(session)
+    active = await profiles.list_active()
+    seen = {profile.id for profile in active}
+    rest = [profile for profile in await profiles.list_all() if profile.id not in seen]
+    return [CandidateProfileRead.model_validate(profile) for profile in [*active, *rest]]
+
+
+@router.get(
     "/active",
     response_model=CandidateProfileRead,
     summary="The profile everything is scored against",
@@ -26,7 +48,11 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 async def read_active_profile(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CandidateProfileRead:
-    """The active resume, without having to know its id.
+    """The default resume, without having to know its id.
+
+    Since migration 0018 several profiles may be active; this answers with the
+    default one (lowest ``priority``, newest on a tie). ``GET /profile`` lists
+    them all.
 
     Declared **above** ``/{profile_id}``: FastAPI matches routes in order, and
     the other way round "active" would be parsed as a UUID and answered with a

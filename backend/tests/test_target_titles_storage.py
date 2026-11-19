@@ -47,38 +47,40 @@ async def test_patch_stores_the_cleaned_list(
     assert stored == ["Python Developer", "Junior Python"]
 
 
-async def test_a_new_resume_inherits_the_live_profiles_titles(
+async def test_a_replacement_inherits_the_replaced_profiles_titles(
     profiles: ProfileRepository, db_session: AsyncSession
 ) -> None:
-    """Uploading a new file is not a new job search."""
-    old = await stored_profile(profiles, db_session, titles=["Python Developer"])
-    new = await stored_profile(profiles, db_session, active=False)
-    await profiles.activate(new.id)
+    """A new version of the same resume is not a new job search."""
+    old_id = (await stored_profile(profiles, db_session, titles=["Python Developer"])).id
+    new_id = (await stored_profile(profiles, db_session, active=False)).id
+    await profiles.activate(new_id)
 
-    inherited = await profiles.inherit_target_titles(new.id)
-    await profiles.deactivate_others(new.id)
+    await profiles.take_over(new_id, old_id)
 
-    assert inherited == ["Python Developer"]
-    refreshed = await profiles.get(new.id)
-    assert refreshed is not None
-    assert refreshed.target_titles == ["Python Developer"]
-    assert old.id != new.id
+    db_session.expire_all()
+    assert (await profiles.get(new_id)).target_titles == ["Python Developer"]  # type: ignore[union-attr]
+    assert (await profiles.get(old_id)).is_active is False  # type: ignore[union-attr]
 
 
-async def test_a_profile_with_its_own_titles_keeps_them(
+async def test_a_replacement_with_its_own_titles_keeps_them(
     profiles: ProfileRepository, db_session: AsyncSession
 ) -> None:
-    """Inheritance fills a gap; it never overwrites a choice."""
+    """What the owner typed on the new profile wins over the old list."""
+    old_id = (await stored_profile(profiles, db_session, titles=["Python Developer"])).id
+    new_id = (await stored_profile(profiles, db_session, titles=["Data Engineer"])).id
+
+    await profiles.take_over(new_id, old_id)
+
+    db_session.expire_all()
+    assert (await profiles.get(new_id)).target_titles == ["Data Engineer"]  # type: ignore[union-attr]
+
+
+async def test_a_new_track_does_not_inherit_another_tracks_titles(
+    profiles: ProfileRepository, db_session: AsyncSession
+) -> None:
+    """Since phase 22 an upload without ``replace`` is a new track: the LLM
+    resume must not start searching with the backend resume's titles."""
     await stored_profile(profiles, db_session, titles=["Python Developer"])
-    new = await stored_profile(profiles, db_session, titles=["Data Engineer"])
+    new = await stored_profile(profiles, db_session)
 
-    assert await profiles.inherit_target_titles(new.id) == ["Data Engineer"]
-
-
-async def test_nothing_to_inherit_is_an_empty_list(
-    profiles: ProfileRepository, db_session: AsyncSession
-) -> None:
-    """The first resume ever has nobody to inherit from."""
-    only = await stored_profile(profiles, db_session)
-
-    assert await profiles.inherit_target_titles(only.id) == []
+    assert new.target_titles == []

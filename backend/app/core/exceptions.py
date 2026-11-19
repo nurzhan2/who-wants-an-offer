@@ -91,6 +91,22 @@ class ParsingError(AppError):
     problem_type = "parsing-error"
 
 
+class NotFoundError(AppError):
+    """The request names something that does not exist."""
+
+    status_code = status.HTTP_404_NOT_FOUND
+    title = "Not found"
+    problem_type = "not-found"
+
+
+class ConflictError(AppError):
+    """The request names something that already exists, or a state it cannot move from."""
+
+    status_code = status.HTTP_409_CONFLICT
+    title = "Conflict"
+    problem_type = "conflict"
+
+
 class SchemaMismatchError(AppError):
     """The live database schema disagrees with what the code assumes.
 

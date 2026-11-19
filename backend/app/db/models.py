@@ -18,7 +18,7 @@ Conventions applied throughout:
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -74,6 +74,14 @@ Score = Numeric(5, 2)
 Years = Numeric(4, 1)
 
 
+def new_profile_slug() -> str:
+    """A slug nobody typed: unique by construction, recognisable as unnamed.
+
+    The same shape migration 0018 gave the rows that existed before slugs did.
+    """
+    return f"cv-{uuid4().hex[:8]}"
+
+
 class CandidateProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Structured resume: what the candidate is and what they want."""
 
@@ -114,7 +122,27 @@ class CandidateProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: compared with a paragraph is not the same measurement as a title
     #: compared with a title.
     headline_embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dim))
+    #: Several profiles may be active at once since migration 0018: one per
+    #: track the owner applies for. Every vacancy is scored against each of
+    #: them and is worked from the one it scores best with — see
+    #: :mod:`app.matching.best`.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: The owner's handle for this resume: ``backend``, ``llm``. Unique, and
+    #: what ``POST /resume/upload?replace=<slug>`` names.
+    slug: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, default=lambda: new_profile_slug()
+    )
+    #: Free text: what kind of job this resume is for.
+    track: Mapped[str | None] = mapped_column(String(50))
+    #: Who wins a tie between two equal scores, lower first. ``default_profile``
+    #: is the active profile with the lowest value.
+    priority: Mapped[int] = mapped_column(
+        Integer, default=100, server_default="100", nullable=False
+    )
+    #: The 38-character hash of this resume on hh. The agent must pick exactly
+    #: this resume in hh's response form; without it a vacancy this profile
+    #: wins is set aside for a person rather than queued for the agent.
+    hh_resume_id: Mapped[str | None] = mapped_column(String(38))
 
     # Extraction runs in the background; the client polls these.
     parse_status: Mapped[ParseStatus] = mapped_column(

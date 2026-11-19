@@ -87,6 +87,10 @@ def make_upsert_item(
     return (make_vacancy(seed, **vacancy_kwargs), *make_source(seed, slug))
 
 
+#: A synthetic hh resume id: the right shape, belonging to nobody.
+SYNTHETIC_HH_RESUME_ID = "0" * 38
+
+
 def make_profile(
     *,
     name: str = "Nurzhan",
@@ -97,7 +101,13 @@ def make_profile(
     skills: Sequence[str] = ("python", "fastapi", "postgresql"),
     **overrides: Any,
 ) -> CandidateProfileCreate:
-    """A structured profile with a handful of skills."""
+    """A structured profile with a handful of skills.
+
+    Carries an hh resume id by default: since phase 22 a vacancy won by a
+    profile without one is set aside rather than queued, and most tests are
+    about something else. Pass ``hh_resume_id=None`` to test that rule.
+    """
+    overrides.setdefault("hh_resume_id", SYNTHETIC_HH_RESUME_ID)
     return CandidateProfileCreate(
         name=name,
         headline="Backend Engineer",

@@ -223,8 +223,14 @@ async def build_profile(
     profile_id: UUID,
     router: LLMRouter | None = None,
     today: date | None = None,
+    replaces: UUID | None = None,
 ) -> BuildResult:
     """Fill in a profile row that already exists in ``pending``.
+
+    ``replaces`` is the profile this upload was sent to replace
+    (``?replace=<slug>``). It is retired only here, after the new one parsed:
+    a failed upload must not leave the track with no resume at all. Without it
+    the new profile simply joins the active ones.
 
     The row is created by the upload endpoint so the client has an id to poll
     immediately. Everything here happens in the caller's transaction: a partial
@@ -257,12 +263,14 @@ async def build_profile(
             domains=list(enriched.domains),
         )
         await profiles.set_embedding(profile_id, vector)
-        # Order matters: activate this one, then retire the rest. The row was
-        # created inactive so a half-parsed profile could never be scored
-        # against, and this is the only place that undoes that.
+        # The row was created inactive so a half-parsed profile could never be
+        # scored against, and this is the only place that undoes that. Since
+        # migration 0018 nothing else is retired by an upload: several resumes
+        # are live at once, one per track. Only the profile this upload was
+        # named to replace steps down, and hands over its name and settings.
         await profiles.activate(profile_id)
-        await profiles.inherit_target_titles(profile_id)
-        await profiles.deactivate_others(profile_id)
+        if replaces is not None:
+            await profiles.take_over(profile_id, replaces)
         await profiles.set_parse_status(profile_id, ParseStatus.READY)
 
     except AppError as exc:

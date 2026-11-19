@@ -11,8 +11,10 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import ConflictError
 from app.db.enums import ParseStatus
-from app.db.models import CandidateProfile, ProfileExperience, ProfileSkill
+from app.db.models import CandidateProfile, ProfileExperience, ProfileSkill, new_profile_slug
+from app.db.profile_order import DEFAULT_ORDER
 from app.schemas.ats import ATSReport
 from app.schemas.profile import (
     CandidateProfileCreate,
@@ -21,6 +23,10 @@ from app.schemas.profile import (
     SkillCreate,
     SkillElsewhere,
 )
+
+#: Columns the owner files a resume under, which an extraction leaves as None
+#: and which must then not overwrite what the upload set.
+_FILING = {"slug", "track", "priority", "hh_resume_id"}
 
 
 class ProfileRepository:
@@ -31,7 +37,8 @@ class ProfileRepository:
 
     async def create(self, profile: CandidateProfileCreate) -> CandidateProfile:
         """Persist a freshly extracted profile together with its skills."""
-        payload = profile.model_dump(exclude={"skills", "experience"})
+        payload = profile.model_dump(exclude={"skills", "experience", *_FILING})
+        payload.update(profile.model_dump(include=_FILING, exclude_none=True))
         instance = CandidateProfile(**payload)
         instance.skills = [ProfileSkill(**skill.model_dump()) for skill in profile.skills]
         instance.experience = [ProfileExperience(**job.model_dump()) for job in profile.experience]
@@ -48,21 +55,60 @@ class ProfileRepository:
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def get_active(self) -> CandidateProfile | None:
-        """The profile the dashboard scores against.
+    async def default_profile(self) -> CandidateProfile | None:
+        """The one profile a single-profile question is answered from.
 
-        v1 is single-user, so "active" is a flag rather than a session. The
-        models already key everything on profile_id, so multi-user later is a
-        routing change, not a schema change.
+        Several profiles are active at once since migration 0018, so "the
+        active profile" stopped being a single row. Everything that still asks a
+        one-profile question — the plan's headline, the screen that opens on one
+        resume, the tracker row nobody attributed — asks it here, explicitly,
+        and gets the same answer: the active profile with the lowest
+        ``priority``, newest first on a tie. Never "whichever came back first".
+
+        A vacancy is NOT worked from this one: it is worked from the profile it
+        scores best with (:mod:`app.matching.best`).
         """
         stmt = (
             select(CandidateProfile)
             .where(CandidateProfile.is_active.is_(True))
-            .order_by(CandidateProfile.created_at.desc())
+            .order_by(*DEFAULT_ORDER)
             .limit(1)
             .options(selectinload(CandidateProfile.skills))
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_active(self) -> CandidateProfile | None:
+        """The default profile. Kept under its old name for the callers that use it.
+
+        See :meth:`default_profile`; the two are the same query.
+        """
+        return await self.default_profile()
+
+    async def list_active(self) -> list[CandidateProfile]:
+        """Every active profile, in the order ties are broken: priority, then newest."""
+        stmt = (
+            select(CandidateProfile)
+            .where(CandidateProfile.is_active.is_(True))
+            .order_by(*DEFAULT_ORDER)
+            .options(selectinload(CandidateProfile.skills))
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def get_by_slug(self, slug: str) -> CandidateProfile | None:
+        """One profile by the owner's handle for it."""
+        stmt = (
+            select(CandidateProfile)
+            .where(CandidateProfile.slug == slug)
+            .options(selectinload(CandidateProfile.skills))
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def slug_taken(self, slug: str, *, by_other_than: UUID | None = None) -> bool:
+        """Whether another profile already answers to ``slug``."""
+        stmt = select(CandidateProfile.id).where(CandidateProfile.slug == slug)
+        if by_other_than is not None:
+            stmt = stmt.where(CandidateProfile.id != by_other_than)
+        return (await self.session.scalar(stmt.limit(1))) is not None
 
     async def list_all(self) -> list[CandidateProfile]:
         """Every resume ever uploaded, newest first, with its skills.
@@ -119,8 +165,15 @@ class ProfileRepository:
         instance = await self.get(profile_id)
         if instance is None:
             return None
+        if changes.slug is not None and await self.slug_taken(
+            changes.slug, by_other_than=profile_id
+        ):
+            raise ConflictError(f"Профиль с меткой «{changes.slug}» уже есть.")
 
         fields = changes.model_dump(exclude_unset=True)
+        if "slug" in fields and fields["slug"] is None:
+            # The column is NOT NULL: an explicit null means "leave it".
+            del fields["slug"]
         # Skills are a relationship, not a column: assigning the dumped dicts
         # would replace ORM objects with plain mappings. They go through
         # replace_skills, which handles the delete-before-insert ordering.
@@ -211,6 +264,10 @@ class ProfileRepository:
         source_format: str,
         started_at: datetime,
         ats_report: ATSReport | None = None,
+        slug: str | None = None,
+        track: str | None = None,
+        priority: int | None = None,
+        hh_resume_id: str | None = None,
     ) -> CandidateProfile:
         """Reserve a profile row before parsing starts.
 
@@ -228,6 +285,10 @@ class ProfileRepository:
             # Stored now because the staged file is deleted when parsing ends.
             ats_report=ats_report.model_dump(mode="json") if ats_report else None,
             is_active=False,
+            slug=slug or new_profile_slug(),
+            track=track,
+            priority=100 if priority is None else priority,
+            hh_resume_id=hh_resume_id,
         )
         self.session.add(instance)
         await self.session.flush()
@@ -266,7 +327,8 @@ class ProfileRepository:
         ``replace_experience`` — both are relationships, and both are replaced
         wholesale rather than merged. Everything else is a plain column update.
         """
-        values = payload.model_dump(exclude={"skills", "experience"})
+        values = payload.model_dump(exclude={"skills", "experience", *_FILING})
+        values.update(payload.model_dump(include=_FILING, exclude_none=True))
         values["updated_at"] = func.now()
         await self.session.execute(
             sa_update(CandidateProfile).where(CandidateProfile.id == profile_id).values(**values)
@@ -287,37 +349,57 @@ class ProfileRepository:
             .values(is_active=True, updated_at=func.now())
         )
 
-    async def inherit_target_titles(self, profile_id: UUID) -> list[str]:
-        """Give a new profile the job titles the live one was searching for.
+    async def take_over(self, profile_id: UUID, replaced_id: UUID) -> None:
+        """Make a freshly parsed profile the successor of the one it replaces.
 
-        Called before ``deactivate_others``, while the previous profile is still
-        the active one. The titles are the owner's intent, typed by hand, and a
-        new resume file does not change what they want to be hired as; losing
-        the list on every upload would quietly return the search to skill
-        keywords. A profile that already holds titles keeps its own.
+        The replaced profile is retired and gives up its slug, which the new one
+        takes, so ``?replace=backend`` twice in a row keeps meaning the same
+        track. What the owner typed rather than what the file says — the
+        target titles, the track, the priority, the hh resume id — is carried
+        over where the new profile has none of its own: a new version of the
+        same resume does not change what the owner applies for with it.
+
+        The old row's matches, letters and applications stay attached to it.
         """
-        instance = await self.get(profile_id)
-        if instance is None or instance.target_titles:
-            return list(instance.target_titles) if instance is not None else []
-        stmt = (
-            select(CandidateProfile.target_titles)
-            .where(CandidateProfile.id != profile_id, CandidateProfile.is_active.is_(True))
-            .order_by(CandidateProfile.updated_at.desc())
-            .limit(1)
-        )
-        previous = (await self.session.execute(stmt)).scalar_one_or_none()
-        if not previous:
-            return []
-        instance.target_titles = list(previous)
+        new = await self.get(profile_id)
+        old = await self.get(replaced_id)
+        if new is None or old is None or new.id == old.id:
+            return
+        # Read everything off the old row BEFORE retiring it: the UPDATE expires
+        # the loaded instance, and touching it afterwards is a lazy load.
+        slug, titles = old.slug, list(old.target_titles)
+        track, hh_resume_id, priority = old.track, old.hh_resume_id, old.priority
+        await self.retire(old.id, free_slug=True)
         await self.session.flush()
-        return list(previous)
+        new.slug = slug
+        if not new.target_titles:
+            new.target_titles = titles
+        new.track = new.track or track
+        new.hh_resume_id = new.hh_resume_id or hh_resume_id
+        new.priority = priority
+        await self.session.flush()
+
+    async def retire(self, profile_id: UUID, *, free_slug: bool = False) -> None:
+        """Take one profile out of scoring, keeping its rows readable.
+
+        What ``?replace=<slug>`` does to the profile it replaces. ``free_slug``
+        renames it to an unnamed slug so the new upload can take the name: the
+        slug is unique, and the history stays attached to the old row.
+        """
+        values: dict[str, Any] = {"is_active": False, "updated_at": func.now()}
+        if free_slug:
+            values["slug"] = new_profile_slug()
+        await self.session.execute(
+            sa_update(CandidateProfile).where(CandidateProfile.id == profile_id).values(**values)
+        )
 
     async def deactivate_others(self, keep_id: UUID) -> int:
         """Retire every other profile so exactly one is live.
 
-        Uploading a new resume supersedes the old profile rather than editing
-        it: the matches, applications and scores attached to the old one stay
-        readable instead of being silently rewritten.
+        **No longer called by an upload** (migration 0018: several profiles are
+        active at once). Kept for the owner who wants to go back to one resume,
+        and for the scripts that set one up. The matches, applications and
+        scores attached to the retired ones stay readable.
         """
         stmt = (
             sa_update(CandidateProfile)
