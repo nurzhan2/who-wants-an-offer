@@ -39,3 +39,15 @@
 - Подпись `hh_resume_id` мандатом подготовлена диффом `docs/stop5-mandate-resume.diff`, не применена · STOP 5 · —
 - Экран «Мои данные»: панель «Резюме по трекам» (переключатель, вкл/выкл, трек, приоритет, hh-id, «Заменить файл», загрузка нескольких файлов) · ТЗ п. 2 · `npm run typecheck && npm run lint && npm run build`
 - Попутно: `wwao/tests/test_chain.py` патчил `cli.chain_command` — ошибка `mypy --strict` была и до фазы · DoD требует чистый mypy · `uv run mypy`
+
+## Фаза B — hh.ru
+
+- Только хост `hh.ru`, без региональных поддоменов · ТЗ: поддомены — только после замера; замер невозможен (сеть) · `test_the_shipped_file_reads_hh_ru_for_remote_work_with_a_night_share`
+- robots.txt hh.ru не переписывался в статические правила · транспорт и так читает robots каждого хоста живьём; статические правила hh.ru в `http.py` уже были и только сужают · чтение `http.py` (`RobotsCache`, `QUERYLESS_HOSTS`, `BLOCKED_PATHS`)
+- Признак удалёнки — `vacancyView.workFormats`, `REMOTE` · найдено в фикстуре живой страницы `hh_vacancy_full.json` и в `FORMAT_TO_REMOTE`, не догадкой · `test_a_remote_only_host_keeps_remote_postings_and_counts_the_rest`
+- `HYBRID` на hh.ru отбрасывается · «только удалёнка» · тот же тест
+- Счётчик `not_remote` в `site_finished`, страниц на удалённую = `fetched/stored` · ТЗ «запиши честно»; живого числа нет · тот же тест (6 страниц → 2 вакансии на фикстуре)
+- `city_fallback: false` для hh.ru · иначе удалённая вакансия без адреса получила бы город «Россия» и попала бы в fingerprint · `test_a_remote_posting_with_no_address_gets_no_city`
+- Токенное ведро — на источник, а не на хост, оставлено как есть · это строже «0,25 на хост», а ускоряться ТЗ запрещает · `test_every_hh_host_shares_one_pace`
+- В `night.cities` hh.ru получил `weight: 2`, последним · ночь сначала тратится на KZ; вес — решение, не замер · тест файла
+- Дедуп hh.kz/hh.ru — общий `(hh, external_id)` и fingerprint · id у hh общие · `test_one_vacancy_on_both_hosts_is_one_vacancy`

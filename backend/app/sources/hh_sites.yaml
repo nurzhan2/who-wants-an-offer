@@ -27,6 +27,28 @@ sites:
     city: Караганда
     country: KZ
     aliases: [караганда, karaganda, қарағанды]
+  # Phase 22: hh.ru, for remote work in Russia only. The bare host and nothing
+  # else: hh.ru's regional subdomains are not added until a measurement shows
+  # they are built like hh.kz's (scripts/probe_hh_roles.py on hh.ru — not run
+  # yet, the container this was written in has no route to hh).
+  #
+  # `remote_only` keeps a posting only when its page says workFormats REMOTE,
+  # read after the page is bought: the sitemap and the catalogue carry no work
+  # format, so this filter saves no request. `not_remote` in
+  # `sources.hh.site_finished` is the count of pages paid for and dropped.
+  #
+  # `city_fallback: false` — "Россия" is not a city, and a remote posting with
+  # no address must not be filed under one.
+  #
+  # robots.txt is read live per host by the transport (CRAWL mode), so hh.ru's
+  # own file governs whatever it says; the static rules in sources/http.py for
+  # hh.ru (no query strings, /search, /resume, /account) only narrow further.
+  - host: hh.ru
+    city: Россия
+    country: RU
+    remote_only: true
+    city_fallback: false
+    aliases: [россия, russia, рф, удалённо в россии]
 
 # How long one run goes, and which of the cities above it walks.
 #
@@ -120,8 +142,14 @@ night:
   #     - {host: astana.hh.kz, weight: 1}
   # All four, 7 Oct 2026: Almaty alone holds ~14 000 and the target is several
   # times that. Weights follow each city's share of the corpus, roughly.
+  # hh.ru added 19 Nov 2026 (phase 22) with weight 2, last in the walk. Its
+  # share of the night is pages, not vacancies: on a remote-only host most pages
+  # are dropped after the fetch, and the ratio is unmeasured until its first run
+  # (`not_remote` against `stored` in the log). The pace is shared — the token
+  # bucket is the source's, not the host's — so this adds no requests a second.
   cities:
     - {host: almaty.hh.kz, weight: 4}
     - {host: astana.hh.kz, weight: 3}
     - {host: shymkent.hh.kz, weight: 1}
     - {host: karaganda.hh.kz, weight: 1}
+    - {host: hh.ru, weight: 2}

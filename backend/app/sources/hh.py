@@ -564,6 +564,18 @@ class HHSite(BaseModel):
     #: remote-only or relocation-only profile produces.
     default: bool = False
     aliases: tuple[str, ...] = ()
+    #: Keep only postings whose work format is ``REMOTE``. Phase 22 reads hh.ru
+    #: for remote work only: the owner is in Kazakhstan, and an office job in
+    #: Moscow is noise. Read from ``vacancyView.workFormats`` on the page, the
+    #: field ``FORMAT_TO_REMOTE`` already maps (fixture ``hh_vacancy_full.json``),
+    #: so the filter can only run after the page was fetched — see
+    #: ``_fetch_counted``.
+    remote_only: bool = False
+    #: Whether the host's city may stand in for a posting that states none.
+    #: False for a country-wide host like hh.ru, whose "city" is not a place a
+    #: posting is in: a remote job with no address must stay without a city
+    #: rather than be filed under Moscow.
+    city_fallback: bool = True
 
     def matches(self, area: str | None) -> bool:
         """Whether a planned area names this city, in any spelling listed."""
@@ -1330,6 +1342,10 @@ class _SiteRun:
     #: Pages fetched because the catalogue named them, i.e. in the role pass
     #: rather than in the general walk behind it.
     role_pass: int = 0
+    #: Pages bought on a ``remote_only`` host and dropped for not being remote.
+    #: ``fetched / (stored)`` on such a host is the honest price of one remote
+    #: vacancy, which is the number phase 22 asked to be written down.
+    not_remote: int = 0
     #: Postings that turned out to carry one of the professional roles the
     #: profile asked for. Together with ``fetched`` this is the number the whole
     #: catalogue path exists to move: relevant postings per request spent.
@@ -2203,6 +2219,7 @@ class HHSource(BaseSource):
             fetched=state.fetched,
             stored=state.stored,
             not_stored=state.not_stored,
+            not_remote=state.not_remote,
             unreadable=state.unreadable,
             catalog_pages=len(catalog.opened),
             catalog_slugs=catalog.slugs,
@@ -2299,6 +2316,13 @@ class HHSource(BaseSource):
             return None
         if posting is None:
             state.not_stored += 1
+            return None
+        if state.site.remote_only and not _is_remote(posting):
+            # A remote-only host (hh.ru, phase 22): the page is already paid
+            # for — the catalogue and the sitemap do not say a posting's work
+            # format, so nothing cheaper could have ruled it out — and the
+            # posting is dropped here, after the fact, and counted.
+            state.not_remote += 1
             return None
         state.stored += 1
         return posting
@@ -2579,7 +2603,7 @@ class HHSource(BaseSource):
         return HHDerived(
             external_id=entry.external_id,
             url=entry.url,
-            city=(city or site.city).strip()[:120],
+            city=(city or (site.city if site.city_fallback else "")).strip()[:120] or None,
             country=(view.area.country_iso if view.area else None) or site.country,
             remote=_remote_from(formats),
             salary=_salary(view.compensation),
@@ -3314,6 +3338,12 @@ def _split_skills(entries: Sequence[Any]) -> tuple[tuple[str, ...], tuple[str, .
         value = str(entry)
         (languages if LANGUAGE_SKILL.match(value) else skills).append(value)
     return tuple(skills), tuple(languages)
+
+
+def _is_remote(posting: RawPosting) -> bool:
+    """Whether a posting this connector built says its work format is remote."""
+    derived = posting.raw.get("_derived")
+    return isinstance(derived, dict) and derived.get("remote") == RemoteType.FULL.value
 
 
 def _remote_from(formats: Sequence[str]) -> RemoteType:
