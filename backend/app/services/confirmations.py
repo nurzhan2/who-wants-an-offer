@@ -51,6 +51,7 @@ from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.db.enums import ApplicationStatus, MatchBucket
 from app.db.models import Application, Match, Vacancy, VacancySource
+from app.matching.best import is_best_match
 from app.schemas.agent import QueueItem
 from app.schemas.confirmations import (
     ConfirmationCard,
@@ -300,15 +301,16 @@ async def _blockers(session: AsyncSession, vacancy: Vacancy) -> list[str]:
     if seed:
         reasons.append("Это тестовая запись, а не настоящая вакансия.")
 
-    profile_id = await agent_queue.active_profile_id(session)
-    if profile_id is None:
+    if await agent_queue.active_profile_id(session) is None:
         reasons.append("Активного резюме нет — загрузите его на «Мои данные».")
         return reasons
+    # The row of the profile this vacancy scores best with: that is the resume
+    # the agent would attach and the score the queue's floor applies to.
     match = (
         await session.execute(
             select(Match.score, Match.bucket)
             .where(Match.vacancy_id == vacancy.id)
-            .where(Match.profile_id == profile_id)
+            .where(is_best_match())
         )
     ).first()
     if match is None:

@@ -51,7 +51,7 @@ from app.db.session import session_factory
 from app.letters import store
 from app.letters.service import write_batch
 from app.matching import profile_vectors
-from app.matching.scorer import ProfileNotReadyError, score_corpus
+from app.matching.scorer import ProfileNotReadyError, profiles_line, score_corpus
 from app.pipeline.embedding import EmbeddingOutcome, embed_pending, embed_pending_titles
 from app.schemas.operations import (
     AgentProgress,
@@ -401,6 +401,8 @@ async def _match(progress: Progress) -> list[str]:
             f"{_BUCKETS.get(key, key)} — {count}" for key, count in outcome.buckets.items()
         ),
     ]
+    if (profiles := profiles_line(outcome.profiles)) is not None:
+        lines.append(profiles)
     if outcome.without_embedding:
         lines.append(
             f"Без вектора описания: {outcome.without_embedding} — посчитайте эмбеддинги и "
@@ -420,7 +422,8 @@ async def _letters(progress: Progress) -> list[str]:
                 "Писать не для кого: активного резюме нет. Загрузите резюме на «Мои данные»."
             )
         progress.total = LETTER_BATCH
-        outcomes = await write_batch(session, profile_id=profile.profile_id, limit=LETTER_BATCH)
+        # No profile named: each letter is written from the vacancy's best one.
+        outcomes = await write_batch(session, limit=LETTER_BATCH)
         await session.commit()
     saved = [outcome for outcome in outcomes if outcome.saved]
     progress.done = len(saved)

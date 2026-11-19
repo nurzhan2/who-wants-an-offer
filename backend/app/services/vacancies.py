@@ -37,7 +37,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConfigurationError
+from app.core.exceptions import ConfigurationError, NotFoundError
 from app.core.logging import get_logger
 from app.db.models import CandidateProfile, Match, VacancySource
 from app.db.repositories.application import ApplicationRepository
@@ -45,6 +45,7 @@ from app.db.repositories.match import MatchRepository
 from app.db.repositories.profile import ProfileRepository
 from app.db.repositories.vacancy import VacancyRepository
 from app.db.seed_rows import is_seed_url, payload_size
+from app.matching.best import best_profiles
 from app.resume.skills import SkillCanonicalizer, default_canonicalizer
 from app.schemas.common import CursorPage
 from app.schemas.dashboard import (
@@ -92,18 +93,25 @@ async def list_page(
     limit: int = 50,
     with_total: bool = False,
     with_facets: bool = False,
+    profile: str | None = None,
 ) -> CursorPage[VacancyListItem]:
-    """One page of the ranked list, for the active profile.
+    """One page of the ranked list, each vacancy scored by its best profile.
 
-    The profile is resolved here rather than taken from the caller: there is one
-    active resume, the score means nothing without it, and a list endpoint that
-    accepted a profile id would be a list endpoint that silently returns
-    unscored rows when somebody passes the wrong one.
+    Since migration 0018 several resumes are active, and a vacancy is ranked by
+    the one it scores best with — the same row its letter and its application
+    come from. ``profile`` (a slug) narrows the scores to one resume, which is
+    what the profile switcher on the screen asks for; an unknown slug is a 404
+    rather than a page of silently unscored rows.
     """
-    profile = await ProfileRepository(session).get_active()
+    profile_id = None
+    if profile is not None:
+        found = await ProfileRepository(session).get_by_slug(profile)
+        if found is None:
+            raise NotFoundError(f"Нет профиля с меткой «{profile}».")
+        profile_id = found.id
     return await VacancyRepository(session).list_filtered(
         filters,
-        profile_id=profile.id if profile is not None else None,
+        profile_id=profile_id,
         cursor=cursor,
         limit=limit,
         with_total=with_total,
@@ -118,7 +126,10 @@ async def card(session: AsyncSession, vacancy_id: UUID) -> VacancyCard | None:
         return None
 
     profiles = ProfileRepository(session)
-    profile = await profiles.get_active()
+    # The resume this vacancy scores best with (migration 0018): its match is
+    # the one shown, its skills the ones the requirements are split against.
+    best = (await best_profiles(session, [vacancy_id])).get(vacancy_id)
+    profile = await profiles.get(best.profile_id) if best is not None else None
     match = (
         await MatchRepository(session).get(profile.id, vacancy_id) if profile is not None else None
     )
@@ -132,9 +143,21 @@ async def card(session: AsyncSession, vacancy_id: UUID) -> VacancyCard | None:
             elsewhere={row.canonical_name: row for row in elsewhere},
         )
 
+    summary = _summary(match)
+    if summary is not None and best is not None:
+        summary = summary.model_copy(
+            update={
+                "profile_id": best.profile_id,
+                "profile_slug": best.slug,
+                "profile_track": best.track,
+                "runner_up_slug": best.runner_up_slug,
+                "runner_up_score": best.runner_up_score,
+                "margin": best.margin,
+            }
+        )
     return VacancyCard(
         vacancy=_with_sources(VacancyRead.model_validate(vacancy), vacancy.sources),
-        match=_summary(match),
+        match=summary,
         requirements=requirements,
         letter=await ApplicationRepository(session).letter_brief(vacancy_id),
     )

@@ -1,4 +1,4 @@
-"""Scoring the corpus against the active profile, and storing why.
+"""Scoring the corpus against every active profile, and storing why.
 
 The formula lives in ``rules.py`` and is pure; this is the part that reads rows,
 computes similarity in the database and writes ``match``. Kept apart so the
@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import MatchBucket, RemoteType, RequirementSource, Seniority
 from app.db.models import CandidateProfile, ProfileSkill, Vacancy, VacancySkill, VacancySource
+from app.db.profile_order import DEFAULT_ORDER
 from app.db.repositories.match import MatchRepository
 from app.matching.rules import (
     DEFAULT_FORMULA,
@@ -81,10 +82,30 @@ class ScoringOutcome:
     unstated: UnstatedRequirement = DEFAULT_UNSTATED
     #: Which number was computed, for the same reason.
     formula: Formula = DEFAULT_FORMULA
+    #: The slugs of the profiles scored, in tie-break order. Since migration
+    #: 0018 a pass scores every active profile, so ``written`` and ``buckets``
+    #: count (vacancy, profile) pairs while ``considered`` counts vacancies.
+    profiles: list[str] = field(default_factory=list)
+
+    def merge(self, other: "ScoringOutcome") -> None:
+        """Fold another profile's pass into this one."""
+        self.considered = max(self.considered, other.considered)
+        self.written += other.written
+        self.skipped_seeds = max(self.skipped_seeds, other.skipped_seeds)
+        self.filtered += other.filtered
+        self.without_embedding = max(self.without_embedding, other.without_embedding)
+        self.without_title_embedding = max(
+            self.without_title_embedding, other.without_title_embedding
+        )
+        self.without_skills = max(self.without_skills, other.without_skills)
+        for key, count in other.buckets.items():
+            self.buckets[key] = self.buckets.get(key, 0) + count
+        self.profiles.extend(other.profiles)
 
     def as_dict(self) -> dict[str, Any]:
         """The counters, for logging."""
         return {
+            "profiles": list(self.profiles),
             "formula": str(self.formula),
             "unstated": str(self.unstated),
             "considered": self.considered,
@@ -115,10 +136,59 @@ async def score_corpus(
     unstated: UnstatedRequirement = DEFAULT_UNSTATED,
     formula: Formula = DEFAULT_FORMULA,
 ) -> ScoringOutcome:
-    """Score every vacancy against the active profile and store the reasons."""
-    profile = await _profile(session, profile_id)
+    """Score every vacancy against every active profile, or the named one.
+
+    One row per (vacancy, profile) pair, which ``match``'s unique key has always
+    allowed. Which profile a vacancy is then worked from is decided by reading
+    those rows (:mod:`app.matching.best`), not here: scoring stays a pure
+    function of one profile and one vacancy.
+
+    The vacancy vectors are shared: nothing here embeds anything, and the
+    similarity of each vacancy to each profile is one more indexed expression
+    per pair in PostgreSQL. The only extra cost of a sixth profile is its own
+    two vectors (``profile_vectors.ensure_profile_embedding``) and one more
+    pass over the corpus.
+    """
+    if profile_id is not None:
+        return await _score_one(
+            session,
+            await _profile(session, profile_id),
+            limit=limit,
+            unstated=unstated,
+            formula=formula,
+        )
+    profiles = list(
+        (
+            await session.execute(
+                select(CandidateProfile)
+                .where(CandidateProfile.is_active.is_(True))
+                .order_by(*DEFAULT_ORDER)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not profiles:
+        raise ProfileNotReadyError(NO_PROFILE)
+    total = ScoringOutcome(unstated=unstated, formula=formula)
+    for profile in profiles:
+        total.merge(
+            await _score_one(session, profile, limit=limit, unstated=unstated, formula=formula)
+        )
+    return total
+
+
+async def _score_one(
+    session: AsyncSession,
+    profile: CandidateProfile,
+    *,
+    limit: int | None,
+    unstated: UnstatedRequirement,
+    formula: Formula,
+) -> ScoringOutcome:
+    """Score every vacancy against one profile and store the reasons."""
     facts = await _profile_facts(session, profile)
-    outcome = ScoringOutcome(unstated=unstated, formula=formula)
+    outcome = ScoringOutcome(unstated=unstated, formula=formula, profiles=[profile.slug])
 
     ids = await _vacancy_ids(session, limit=limit)
     canonicalizer = default_canonicalizer()
@@ -153,20 +223,31 @@ async def score_corpus(
     return outcome
 
 
-async def _profile(session: AsyncSession, profile_id: UUID | None) -> CandidateProfile:
-    """The profile to score against, with the reason if there is not one."""
-    stmt = select(CandidateProfile)
-    stmt = (
-        stmt.where(CandidateProfile.id == profile_id)
-        if profile_id is not None
-        else stmt.where(CandidateProfile.is_active.is_(True))
+def profiles_line(slugs: Sequence[str]) -> str | None:
+    """One Russian line naming the profiles a pass scored, or None for one profile.
+
+    None with a single profile, so a one-resume report reads as it always did.
+    """
+    if len(slugs) <= 1:
+        return None
+    return (
+        f"Профилей: {len(slugs)} ({', '.join(slugs)}); оценка — на каждую пару "
+        "«вакансия × профиль», вакансия идёт от того профиля, с которым совпала лучше."
     )
-    profile = (await session.execute(stmt.limit(1))).scalar_one_or_none()
+
+
+#: What a pass with nothing to score against says.
+NO_PROFILE = (
+    "нет активного профиля: загрузите резюме через POST /api/v1/resume/upload "
+    "или выполните python scripts/seed.py"
+)
+
+
+async def _profile(session: AsyncSession, profile_id: UUID) -> CandidateProfile:
+    """The named profile, with the reason if there is not one."""
+    profile = await session.get(CandidateProfile, profile_id)
     if profile is None:
-        raise ProfileNotReadyError(
-            "нет активного профиля: загрузите резюме через POST /api/v1/profile/resume "
-            "или выполните python scripts/seed.py"
-        )
+        raise ProfileNotReadyError(NO_PROFILE)
     return profile
 
 

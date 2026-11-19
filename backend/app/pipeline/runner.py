@@ -61,7 +61,7 @@ from app.schemas.profile import CandidateProfileRead
 from app.schemas.vacancy import VacancyCreate
 from app.sources.base import BaseSource, RawPosting, SourceUnavailable, Unavailable
 from app.sources.http import HHChallengedError, get_client
-from app.sources.query_planner import QueryPlan, plan_queries
+from app.sources.query_planner import QueryPlan, plan_for_profiles
 from app.sources.registry import disabled_reason, get_enabled_sources, get_source
 
 logger = get_logger(__name__)
@@ -285,10 +285,14 @@ async def run_pipeline(
     """
     started = asyncio.get_running_loop().time()
     async with sessions() as session:
-        profile = await ProfileRepository(session).get_active()
-        if profile is None:
+        # Every active profile, default first: one resume per track, and a run
+        # looks for all of them (migration 0018).
+        profiles = await ProfileRepository(session).list_active()
+        if not profiles:
             raise AppError("Нет активного профиля: сначала загрузите резюме")
-        plan = plan_queries(CandidateProfileRead.model_validate(profile))
+        plan = plan_for_profiles(
+            [CandidateProfileRead.model_validate(profile) for profile in profiles]
+        )
         sources = await _eligible(session, source_slugs, force=force)
 
     logger.info(

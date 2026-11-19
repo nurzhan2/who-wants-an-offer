@@ -28,6 +28,7 @@ from app.db.models import (
     ReferenceDocument,
     Vacancy,
 )
+from app.db.profile_order import default_profile_id_stmt
 from app.letters.context import fold
 from app.workshop.references import ReferenceText
 from app.workshop.rules import BUILTIN_RULES, RuleParams, RuleSpec
@@ -197,10 +198,7 @@ async def held_skills(
     found = await session.scalar(
         select(CandidateProfile.id).where(CandidateProfile.id == profile_id)
         if profile_id is not None
-        else select(CandidateProfile.id)
-        .where(CandidateProfile.is_active.is_(True))
-        .order_by(CandidateProfile.created_at.desc())
-        .limit(1)
+        else default_profile_id_stmt()
     )
     if found is None:
         return frozenset(), False

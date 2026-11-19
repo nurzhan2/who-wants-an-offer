@@ -112,6 +112,7 @@ def show(outcome: ScoringOutcome, note: str | None, *, dry_run: bool) -> None:
         print()
     # Named every time: bucket counts from two passes are only comparable when
     # the reader can see which rule weighed the unwritten requirement.
+    print(f"  профили                  {', '.join(outcome.profiles) or '—'}")
     print(f"  формула                  {outcome.formula.value}")
     print(f"  ненаписанное требование  {outcome.unstated.value}")
     print(f"  вакансий рассмотрено   {outcome.considered}")

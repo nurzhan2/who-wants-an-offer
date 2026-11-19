@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, nulls_last, select
+from sqlalchemy import Select, func, literal, nulls_last, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -33,6 +33,7 @@ from app.db.models import (
     VacancySkill,
     VacancySource,
 )
+from app.db.profile_order import DEFAULT_ORDER
 from app.db.seed_rows import seed_only
 from app.letters import channel
 from app.letters.channel import SourceScope
@@ -51,6 +52,7 @@ from app.letters.examples import (
     OutcomeEvidence,
     grade_of,
 )
+from app.matching.best import best_profile_id, is_best_match
 
 logger = get_logger(__name__)
 
@@ -83,6 +85,15 @@ class QueuedVacancy:
     #: hand when ``via_agent`` is false.
     source_slug: str = ""
     url: str = ""
+    #: The profile the letter is written from: the vacancy's best profile
+    #: (:mod:`app.matching.best`). ``None`` only for a row built by hand.
+    profile_id: UUID | None = None
+
+
+async def best_profile_for(session: AsyncSession, vacancy_id: UUID) -> UUID | None:
+    """The active profile this vacancy scores best with, or None if none scored it."""
+    found = await session.scalar(select(best_profile_id(literal(vacancy_id))))
+    return found if isinstance(found, UUID) else None
 
 
 async def load_vacancy_facts(session: AsyncSession, vacancy_id: UUID) -> VacancyFacts | None:
@@ -116,12 +127,12 @@ async def load_vacancy_facts(session: AsyncSession, vacancy_id: UUID) -> Vacancy
 async def load_profile_facts(
     session: AsyncSession, profile_id: UUID | None = None
 ) -> ProfileFacts | None:
-    """The candidate the letters are for: the named profile, or the active one."""
+    """The candidate the letters are for: the named profile, or the default one."""
     if profile_id is None:
         profile = await session.scalar(
             select(CandidateProfile)
             .where(CandidateProfile.is_active.is_(True))
-            .order_by(CandidateProfile.created_at.desc())
+            .order_by(*DEFAULT_ORDER)
             .limit(1)
         )
     else:
@@ -153,7 +164,7 @@ async def load_profile_facts(
 async def queue(
     session: AsyncSession,
     *,
-    profile_id: UUID,
+    profile_id: UUID | None = None,
     limit: int = 10,
     min_score: Decimal | None = None,
     include_written: bool = False,
@@ -185,6 +196,13 @@ async def queue(
     ``min_score`` defaults to ``agent_queue_min_score``, the floor the agent
     queue serves from: a letter below it is written for a vacancy the queue will
     never offer.
+
+    **Each vacancy appears once, with the profile it scores best with** (since
+    migration 0018, :mod:`app.matching.best`). The letter is written from that
+    resume, and the threshold applies to that score: a vacancy whose best
+    profile is under the floor gets no letter from any of them. ``profile_id``
+    narrows the list to the vacancies that profile wins; it never makes a
+    profile write for a vacancy another one wins.
     """
     threshold = min_score if min_score is not None else Decimal(settings.agent_queue_min_score)
     written = (
@@ -203,9 +221,10 @@ async def queue(
             via_agent.label("via_agent"),
             channel.primary_slug(Match.vacancy_id).label("source_slug"),
             channel.primary_url(Match.vacancy_id).label("url"),
+            Match.profile_id,
         )
         .join(Vacancy, Vacancy.id == Match.vacancy_id)
-        .where(Match.profile_id == profile_id)
+        .where(is_best_match())
         .where(Match.score >= threshold)
         .where(Match.bucket != MatchBucket.FILTERED)
         .where(~channel.skipped_by_agent(Match.vacancy_id))
@@ -217,6 +236,8 @@ async def queue(
         .order_by(via_agent.desc(), Match.score.desc(), Match.vacancy_id)
         .limit(limit)
     )
+    if profile_id is not None:
+        stmt = stmt.where(Match.profile_id == profile_id)
     narrowed = channel.scope_condition(Match.vacancy_id, scope, source_slug)
     if narrowed is not None:
         stmt = stmt.where(narrowed)
@@ -234,6 +255,7 @@ async def queue(
             via_agent=bool(row.via_agent),
             source_slug=row.source_slug or "",
             url=row.url or "",
+            profile_id=row.profile_id,
         )
         for row in rows
     ]

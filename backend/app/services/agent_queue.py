@@ -91,7 +91,9 @@ from app.db.models import (
     VacancySkill,
     VacancySource,
 )
+from app.db.profile_order import default_profile_id_stmt
 from app.letters import channel
+from app.matching.best import is_best_match
 from app.resume import ats_audit
 from app.resume.ats_keywords import HeldSkill, match_requirements
 from app.schemas.agent import (
@@ -171,6 +173,8 @@ class ReadyItem:
 
     vacancy_id: UUID
     item: QueueItem
+    #: The profile the vacancy was won by, whose letter and resume these are.
+    profile_id: UUID | None = None
 
 
 @final
@@ -217,8 +221,7 @@ async def triage(
     ``require_letter=False`` asks the narrower question the chain asks before it
     writes letters: "what has cleared every check *except* having a letter?".
     """
-    profile = profile_id if profile_id is not None else await active_profile_id(session)
-    if profile is None:
+    if await active_profile_id(session) is None:
         logger.info("agent.queue.no_profile")
         return Triage()
 
@@ -226,7 +229,7 @@ async def triage(
     rows = (
         await session.execute(
             _queue_statement(
-                profile_id=profile,
+                profile_id=profile_id,
                 min_score=threshold,
                 # Always False here: a vacancy with no letter is a set-aside
                 # row with a reason, not a row the SQL hides. ``require_letter``
@@ -244,7 +247,9 @@ async def triage(
     # ``active_rules`` rather than ``stored_rules`` so the two built-in ones —
     # no links, no contact handles — are checked here exactly as they are when
     # the letter is written; they are the ones hh files as spam.
-    held = await ats_service.held_skills(session, profile)
+    # Per winning profile: the audit asks whether *this* resume holds a
+    # requirement, and a vacancy won by the LLM resume is judged against it.
+    held_by: dict[UUID, list[HeldSkill]] = {}
     rules = await workshop_store.active_rules(session, scope=RuleScope.COVER_LETTER)
 
     ready: list[ReadyItem] = []
@@ -264,17 +269,19 @@ async def triage(
             # 91 and silently never appears anywhere.
             set_aside.append(_unservable(row))
             continue
-        item = item.model_copy(update={"ats": _ats_summary(item, row, held)})
+        if row.profile_id not in held_by:
+            held_by[row.profile_id] = await ats_service.held_skills(session, row.profile_id)
+        item = item.model_copy(update={"ats": _ats_summary(item, row, held_by[row.profile_id])})
         item = item.model_copy(update={"confirmation": _confirmation(item, row)})
         refusal = _refusal(row, item, rules=rules, require_letter=require_letter)
         if refusal is None:
-            ready.append(ReadyItem(vacancy_id=row.vacancy_id, item=item))
+            ready.append(ReadyItem(vacancy_id=row.vacancy_id, item=item, profile_id=row.profile_id))
         else:
             set_aside.append(_aside(row, item, *refusal))
 
     logger.info(
         "agent.queue.triaged",
-        profile_id=str(profile),
+        profile_id=str(profile_id) if profile_id is not None else "best",
         ready=len(ready),
         set_aside=len(set_aside),
         source=settings.agent_source_slug,
@@ -422,6 +429,19 @@ def _refusal(
                 + ". Робот-фильтр работодателя прочитает его неправильно.",
             )
 
+    # Which of the owner's hh resumes the agent must attach. Without it the
+    # agent would send whichever resume hh's form happens to preselect — with a
+    # letter written from a different one. Only when a letter is required: the
+    # chain asks with ``require_letter=False`` to decide what needs a letter,
+    # and a vacancy applied to by hand still wants one.
+    if require_letter and not row.hh_resume_id:
+        return (
+            SetAsideKind.NO_HH_RESUME,
+            f"Вакансия выиграна резюме «{row.profile_slug}», а у этого профиля не указан "
+            "hh_resume_id — агент не знает, какое резюме выбрать в форме hh. Укажите его "
+            "на «Мои данные» или откликнитесь сами.",
+        )
+
     fresh_for = timedelta(hours=settings.agent_page_freshness_hours)
     if datetime.now(UTC) - row.last_seen_at > fresh_for:
         return (
@@ -557,18 +577,14 @@ async def record_results(
 
 
 async def active_profile_id(session: AsyncSession) -> UUID | None:
-    """The profile the dashboard is currently working from.
+    """The default profile: lowest priority among the active ones, newest on a tie.
 
-    Same rule as ``app/letters/store.load_profile_facts``: the newest active
-    one. Duplicated rather than imported because that module's queries are
-    about writing letters and this one is not.
+    Since migration 0018 this is NOT the profile a vacancy is applied with —
+    that is the vacancy's best profile (:mod:`app.matching.best`). It answers
+    only the questions that have one profile in them, such as which profile a
+    result posted for an unscored vacancy is attributed to.
     """
-    found = await session.scalar(
-        select(CandidateProfile.id)
-        .where(CandidateProfile.is_active.is_(True))
-        .order_by(CandidateProfile.created_at.desc())
-        .limit(1)
-    )
+    found = await session.scalar(default_profile_id_stmt())
     # Checked rather than cast: SQLAlchemy types a scalar select of a UUID
     # column as Any, and an isinstance costs less than a suppression comment.
     return found if isinstance(found, UUID) else None
@@ -662,7 +678,7 @@ def _letter_row(column: Any) -> Any:
 
 def _queue_statement(
     *,
-    profile_id: UUID,
+    profile_id: UUID | None,
     min_score: Decimal,
     require_letter: bool,
     limit: int,
@@ -719,6 +735,9 @@ def _queue_statement(
             VacancySource.external_id,
             VacancySource.url,
             VacancySource.raw,
+            Match.profile_id,
+            CandidateProfile.slug.label("profile_slug"),
+            CandidateProfile.hh_resume_id,
             Match.score,
             Match.bucket,
             Match.verdict,
@@ -738,12 +757,16 @@ def _queue_statement(
         )
         .select_from(Match)
         .join(Vacancy, Vacancy.id == Match.vacancy_id)
+        .join(CandidateProfile, CandidateProfile.id == Match.profile_id)
         .join(
             VacancySource,
             (VacancySource.vacancy_id == Vacancy.id)
             & (VacancySource.source_slug == settings.agent_source_slug),
         )
-        .where(Match.profile_id == profile_id)
+        # Each vacancy once, on the row of the profile it scores best with: the
+        # score that has to clear the floor is the winner's, and the resume the
+        # agent attaches is the winner's (migration 0018, app.matching.best).
+        .where(is_best_match())
         .where(Match.score >= min_score)
         # ``filtered`` is "do not apply", not a low score: a vacancy asking six
         # years of a candidate with 1.1, or a language they do not speak, keeps
@@ -764,6 +787,8 @@ def _queue_statement(
         statement = statement.where(letter.is_not(None))
     if vacancy_id is not None:
         statement = statement.where(Vacancy.id == vacancy_id)
+    if profile_id is not None:
+        statement = statement.where(Match.profile_id == profile_id)
     return statement
 
 
@@ -812,6 +837,8 @@ def _to_item(row: Any) -> QueueItem | None:
         anonymous=bool(derived.get("anonymous", False)),
         employer_on_additional_check=bool(derived.get("employer_on_additional_check", False)),
         hh_lines=_hh_lines(row.hh_blocking_warning, row.hh_warning),
+        profile_slug=row.profile_slug,
+        hh_resume_id=row.hh_resume_id,
     )
 
 

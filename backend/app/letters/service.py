@@ -349,6 +349,8 @@ async def write_batch(
     """Work down the queue of vacancies that still need a letter.
 
     The agent's source first, then the rest — see :func:`app.letters.store.queue`.
+    Each letter is written from the vacancy's best profile; ``profile_id``
+    narrows the batch to the vacancies that profile wins.
 
     Sequential on purpose. The heavy tasks route to the Claude Code CLI, whose
     provider holds a concurrency semaphore of its own; firing a hundred of these
@@ -359,31 +361,42 @@ async def write_batch(
     that wants to print how much is known before it prints the letters — hand
     them in instead of paying for the same query twice.
     """
-    profile = await store.load_profile_facts(session, profile_id)
-    if profile is None:
-        return []
-
     queued = await store.queue(
         session,
-        profile_id=profile.profile_id,
+        profile_id=profile_id,
         limit=limit,
         min_score=min_score,
         include_written=force,
         scope=scope,
         source_slug=source_slug,
     )
-    # Once for the run: the answered applications do not change while a batch is
-    # being written, and which of them suit a given vacancy is decided per
-    # vacancy from this same list.
-    if pool is None:
-        pool = await store.load_examples(session, profile_id=profile.profile_id)
     # Once for the run, like the pool and for the same reason: the rules do not
     # change while a batch is being written, and re-reading them per vacancy
     # would also let a mid-run edit apply to half the letters.
     if workshop is None:
         workshop = await load_workshop(session)
+    # Each vacancy is written from the profile it scores best with, so the
+    # candidate facts and the past outcomes are read once per profile that
+    # actually wins something, not once per vacancy. A ``pool`` handed in by the
+    # caller belongs to the profile it named and is used only for that one.
+    profiles: dict[UUID, ProfileFacts | None] = {}
+    pools: dict[UUID, few_shot.ExamplePool] = {}
     outcomes: list[LetterOutcome] = []
     for item in queued:
+        owner = item.profile_id or profile_id
+        if owner is None:
+            continue
+        if owner not in profiles:
+            profiles[owner] = await store.load_profile_facts(session, owner)
+        profile = profiles[owner]
+        if profile is None:
+            continue
+        if owner not in pools:
+            pools[owner] = (
+                pool
+                if pool is not None and owner == profile_id
+                else await store.load_examples(session, profile_id=owner)
+            )
         outcome = await write_letter(
             session,
             item.vacancy_id,
@@ -391,7 +404,7 @@ async def write_batch(
             router=router,
             force=force,
             dry_run=dry_run,
-            pool=pool,
+            pool=pools[owner],
             workshop=workshop,
         )
         outcomes.append(

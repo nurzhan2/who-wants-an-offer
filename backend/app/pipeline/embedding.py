@@ -63,6 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import CandidateProfile
+from app.db.profile_order import DEFAULT_ORDER
 from app.db.repositories.vacancy import (
     EmbeddedVacancy,
     EmbeddingCandidate,
@@ -294,13 +295,51 @@ async def embed_pending(
     batch_size = settings.embedding_batch_size
 
     progress = _Progress()
-    # Ids already looked at during this call. The selection is a *predicate*,
+
+    # One walk per ranking profile, default first, sharing the budgets and the
+    # running totals. Each walk protects its own profile's top; a row the first
+    # walk embedded is simply not outstanding for the second. So the rows
+    # embedded are the UNION of every profile's protected top — never fewer
+    # than one profile would need, and no vacancy is embedded twice. With no
+    # ranking profile at all there is one unranked walk, as before.
+    ranking = await _ranking_profiles(session)
+    walks: list[tuple[UUID, Sequence[float]] | None] = list(ranking) or [None]
+    for profile in walks:
+        outcome = await _walk(
+            session,
+            vacancies,
+            profile,
+            progress=progress,
+            deadline=deadline,
+            max_vectors=max_vectors,
+            batch_size=batch_size,
+            clock=clock,
+        )
+        # Only "this profile's top is safe" hands over to the next profile; a
+        # spent budget, a drained backlog or a missing model ends the call.
+        if outcome.stopped != "beyond_reach" or profile is walks[-1]:
+            break
+    return outcome
+
+
+async def _walk(
+    session: AsyncSession,
+    vacancies: VacancyRepository,
+    profile: tuple[UUID, Sequence[float]] | None,
+    *,
+    progress: _Progress,
+    deadline: float,
+    max_vectors: int,
+    batch_size: int,
+    clock: Clock,
+) -> EmbeddingOutcome:
+    """One walk nearest-title-first for one profile, or unranked for none."""
+    # Ids already looked at during this walk. The selection is a *predicate*,
     # not a queue: a row whose text had not moved is left untouched on purpose,
     # so it is offered again by the very next window. Without this set the loop
-    # would re-examine it forever.
+    # would re-examine it forever. Per walk, not per call: a row the previous
+    # profile's walk stopped short of is exactly what this one may need.
     examined: set[UUID] = set()
-
-    profile = await _ranking_profile(session)
     reach = (
         None
         if profile is None
@@ -467,33 +506,35 @@ async def _finish_titles(
     )
 
 
-async def _ranking_profile(session: AsyncSession) -> tuple[UUID, Sequence[float]] | None:
-    """The active profile's id and vector, when it has both halves of the formula.
+async def _ranking_profiles(session: AsyncSession) -> list[tuple[UUID, Sequence[float]]]:
+    """Every active profile's id and vector that has both halves of the formula.
 
     Both are needed and for different things: the id so the selection can rank
     rows by title distance in SQL, and the vector so each fresh description can
     be scored here without a round trip. A profile missing either cannot support
-    the reach rule, and this returns ``None`` rather than half of one — the pass
-    then embeds everything, which is what it did before and is never wrong, only
-    expensive.
+    the reach rule and is left out; with none left the pass embeds everything,
+    which is what it did before and is never wrong, only expensive.
+
+    In tie-break order, the default profile first: when the budget runs out
+    between walks, the default track is the one that got its top.
 
     ``headline_embedding`` is filled by ``matching.profile_vectors``, which the
     scoring step runs before it scores. So the first pass after a new resume is
-    unranked and the next one is ranked, without anything here having to order
-    the two steps.
+    unranked for that resume and the next one is ranked, without anything here
+    having to order the two steps.
     """
-    row = (
+    rows = (
         await session.execute(
-            select(CandidateProfile.id, CandidateProfile.embedding).where(
+            select(CandidateProfile.id, CandidateProfile.embedding)
+            .where(
                 CandidateProfile.is_active,
                 CandidateProfile.embedding.is_not(None),
                 CandidateProfile.headline_embedding.is_not(None),
             )
+            .order_by(*DEFAULT_ORDER)
         )
-    ).first()
-    if row is None or row.embedding is None:
-        return None
-    return row.id, row.embedding
+    ).all()
+    return [(row.id, row.embedding) for row in rows if row.embedding is not None]
 
 
 def _changed(candidates: Sequence[EmbeddingCandidate], progress: _Progress) -> list[_Pending]:

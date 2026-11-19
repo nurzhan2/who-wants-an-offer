@@ -523,3 +523,61 @@ def plan_queries(
         dropped=dropped,
         limit=budget,
     )
+
+
+#: The ceiling of a merged plan however many profiles are active: the same upper
+#: bound ``max_queries_per_run`` itself is validated against.
+MERGED_PLAN_CEILING = 200
+
+
+def plan_for_profiles(
+    profiles: Sequence[CandidateProfileRead],
+    *,
+    canonicalizer: SkillCanonicalizer | None = None,
+) -> QueryPlan:
+    """One run's plan for several active profiles: each one's plan, interleaved.
+
+    Since migration 0018 the owner keeps one resume per track, and a run must
+    look for every track, not only the default one's. Each profile gets its own
+    plan from :func:`plan_queries` — its own titles or skills, its own places —
+    and the plans are dealt round-robin, the default profile first, so a cap
+    cuts the weakest query of every track rather than all of the last one.
+
+    The cap is ``max_queries_per_run`` per profile, bounded by
+    :data:`MERGED_PLAN_CEILING`. That widens what metered sources are asked for,
+    not how fast: jsearch spends one page per query per run from a rotation in
+    ``source_state``, so six tracks take six times as many runs to cover rather
+    than six times the quota, and hh's pace and page budget do not read the plan
+    at all. hh ranks catalogue pages by the first headline in the plan, which is
+    the default profile's (``plan_for_profiles`` keeps it first); the other
+    tracks reach hh through their keywords.
+
+    Duplicates across profiles — two resumes both asking for «Python Developer
+    Алматы» — are kept once.
+    """
+    if not profiles:
+        return QueryPlan()
+    plans = [plan_queries(profile, canonicalizer=canonicalizer) for profile in profiles]
+    if len(plans) == 1:
+        return plans[0]
+    budget = min(MERGED_PLAN_CEILING, settings.max_queries_per_run * len(plans))
+    unique: dict[PlanKey, SearchQuery] = {}
+    collapsed = 0
+    for rank in range(max(len(plan.queries) for plan in plans)):
+        for plan in plans:
+            if rank < len(plan.queries):
+                key = _plan_key(plan.queries[rank])
+                if key in unique:
+                    collapsed += 1
+                    continue
+                unique[key] = plan.queries[rank]
+    queries = list(unique.values())
+    kept = queries[:budget]
+    return QueryPlan(
+        queries=tuple(kept),
+        groups=tuple(dict.fromkeys(group for plan in plans for group in plan.groups)),
+        placements=max(plan.placements for plan in plans),
+        collapsed=collapsed + sum(plan.collapsed for plan in plans),
+        dropped=len(queries) - len(kept) + sum(plan.dropped for plan in plans),
+        limit=budget,
+    )

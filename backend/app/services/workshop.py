@@ -58,7 +58,7 @@ async def queue(
     min_score: Decimal | None = DEFAULT_MIN_SCORE,
     include_written: bool = True,
 ) -> list[QueuedLetter]:
-    """The best-scoring vacancies for the active profile, letter or not.
+    """The best-scoring vacancies, each for its best profile, letter or not.
 
     ``include_written`` defaults on here and off in the batch writer, and the
     difference is the difference between a screen and a job. The batch skips
@@ -70,9 +70,9 @@ async def queue(
     if profile is None:
         logger.info("workshop.queue.no_profile")
         return []
+    # Every vacancy once, with the profile it scores best with.
     queued = await store.queue(
         session,
-        profile_id=profile.profile_id,
         limit=limit,
         min_score=min_score,
         include_written=include_written,
@@ -116,7 +116,11 @@ async def write(
     model, which is the branch that has to keep working when no provider is
     reachable.
     """
-    profile = await store.load_profile_facts(session)
+    # From the profile this vacancy scores best with; the default profile for a
+    # vacancy nothing has scored yet.
+    profile = await store.load_profile_facts(
+        session, await store.best_profile_for(session, vacancy_id)
+    )
     if profile is None:
         return WorkshopResult(vacancy_id=vacancy_id, title="", skipped=NO_PROFILE)
 

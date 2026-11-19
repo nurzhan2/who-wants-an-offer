@@ -20,7 +20,6 @@ from sqlalchemy import (
     bindparam,
     case,
     exists,
-    false,
     func,
     literal,
     literal_column,
@@ -48,6 +47,7 @@ from app.db.models import (
     VacancySkill,
     VacancySource,
 )
+from app.db.profile_order import best_profile_id
 from app.db.repositories.cursor import Cursor, SortableColumn, keyset_order_by, keyset_where
 from app.db.seed_rows import fullest_first, seed_only
 from app.schemas.common import (
@@ -877,13 +877,18 @@ class VacancyRepository:
 
     @staticmethod
     def _match_on(profile_id: UUID | None) -> ColumnElement[bool]:
-        """LEFT JOIN condition tying match rows to one profile.
+        """LEFT JOIN condition tying match rows to one profile, or to the best one.
 
-        With no profile the condition is constant false, so every vacancy gets
-        a NULL score instead of quietly picking up another profile's match.
+        With a profile, that profile's row. Without one, the row of the active
+        profile the vacancy scores best with (migration 0018,
+        :mod:`app.matching.best`) — one row per vacancy, so the list neither
+        repeats a vacancy per resume nor quietly shows an arbitrary one. With
+        no active profile at all the subquery is NULL and every score is NULL.
         """
         if profile_id is None:
-            return false()
+            return and_(
+                Match.vacancy_id == Vacancy.id, Match.profile_id == best_profile_id(Vacancy.id)
+            )
         return and_(Match.vacancy_id == Vacancy.id, Match.profile_id == profile_id)
 
     def _base_select(
@@ -930,6 +935,10 @@ class VacancyRepository:
                 Vacancy.currency,
                 Vacancy.salary_min_normalized,
                 Match.score.label("score"),
+                select(CandidateProfile.slug)
+                .where(CandidateProfile.id == Match.profile_id)
+                .scalar_subquery()
+                .label("profile_slug"),
                 mode_score(mode).label("mode_score"),
                 Match.bucket.label("bucket"),
                 func.coalesce(func.jsonb_array_length(Match.missing_required), 0).label(

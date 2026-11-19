@@ -59,8 +59,10 @@ from app.db.models import Application
 from app.db.session import session_factory
 from app.letters import service as letters_service
 from app.letters import store as letters_store
+from app.letters.context import ProfileFacts
+from app.letters.examples import ExamplePool
 from app.matching import profile_vectors
-from app.matching.scorer import ProfileNotReadyError, score_corpus
+from app.matching.scorer import ProfileNotReadyError, profiles_line, score_corpus
 from app.pipeline.embedding import EmbeddingOutcome, embed_pending, embed_pending_titles
 from app.schemas.autopilot import (
     BatchConfirmOutcome,
@@ -324,6 +326,8 @@ async def _step_match(step: ChainStep) -> list[str]:
             raise ChainStepFailedError(str(error)) from error
         await session.commit()
     lines = [f"Рассмотрено вакансий: {outcome.considered}, записано оценок: {outcome.written}."]
+    if (profiles := profiles_line(outcome.profiles)) is not None:
+        lines.append(profiles)
     if outcome.without_embedding:
         lines.append(f"Без вектора описания осталось: {outcome.without_embedding}.")
     if note:
@@ -354,9 +358,11 @@ async def _step_letters(step: ChainStep) -> list[str]:
         selection = await agent_queue.triage(session, limit=SELECTION_LIMIT, require_letter=False)
     # Ready-but-letterless, which with ``require_letter=False`` is exactly "has
     # cleared every check except the one about a letter it does not have yet".
-    waiting = [ready.vacancy_id for ready in selection.ready if ready.item.letter is None][
-        :LETTER_LIMIT
-    ]
+    waiting = [
+        (ready.vacancy_id, ready.profile_id)
+        for ready in selection.ready
+        if ready.item.letter is None
+    ][:LETTER_LIMIT]
     if not waiting:
         lines.append("Писать не для чего: у всех прошедших отбор письма уже есть.")
         return lines
@@ -364,14 +370,26 @@ async def _step_letters(step: ChainStep) -> list[str]:
     step.note = f"пишу письма: 0 из {len(waiting)}"
     written = 0
     async with session_factory() as session:
-        profile = await letters_store.load_profile_facts(session, None)
-        if profile is None:
+        if await letters_store.load_profile_facts(session, None) is None:
             raise ChainStepFailedError("активного резюме нет — загрузите его на «Мои данные».")
-        pool = await letters_store.load_examples(session, profile_id=profile.profile_id)
         bench = await letters_service.load_workshop(session)
-        for number, vacancy_id in enumerate(waiting, start=1):
+        # Each letter from the profile that won its vacancy; facts and past
+        # outcomes read once per winning profile.
+        facts: dict[UUID, ProfileFacts | None] = {}
+        pools: dict[UUID, ExamplePool] = {}
+        for number, (vacancy_id, profile_id) in enumerate(waiting, start=1):
+            if profile_id is None:
+                continue
+            if profile_id not in facts:
+                facts[profile_id] = await letters_store.load_profile_facts(session, profile_id)
+                pools[profile_id] = await letters_store.load_examples(
+                    session, profile_id=profile_id
+                )
+            profile = facts[profile_id]
+            if profile is None:
+                continue
             letter = await letters_service.write_letter(
-                session, vacancy_id, profile, pool=pool, workshop=bench
+                session, vacancy_id, profile, pool=pools[profile_id], workshop=bench
             )
             written += 1 if letter.saved else 0
             step.note = f"пишу письма: {number} из {len(waiting)}"

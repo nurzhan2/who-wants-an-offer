@@ -270,6 +270,14 @@ class MatchSummary(BaseModel):
     verdict: str | None = None
     application_angle: str | None = None
     scored_at: datetime
+    #: Which resume won this vacancy, and by how much over the next one.
+    #: ``margin`` is NULL with a single active profile.
+    profile_id: UUID | None = None
+    profile_slug: str | None = None
+    profile_track: str | None = None
+    runner_up_slug: str | None = None
+    runner_up_score: Decimal | None = None
+    margin: Decimal | None = None
 
 
 class LetterBrief(BaseModel):

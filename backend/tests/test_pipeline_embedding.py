@@ -273,10 +273,12 @@ def wire(
     provider: CountingProvider,
     *,
     profile: tuple[UUID, Sequence[float]] | None = None,
+    profiles: Sequence[tuple[UUID, Sequence[float]]] | None = None,
 ) -> FakeVacancies:
     """Point the step at the doubles and hand back the repository.
 
-    ``profile`` is what ``_ranking_profile`` will answer. ``None`` — the default
+    ``profile`` is the one ranking profile ``_ranking_profiles`` will answer
+    with; ``profiles`` several of them, in walk order. ``None`` — the default
     — is the unranked pass: no headline vector to rank by, so the step embeds
     everything, which is what it did before the reach rule existed and what
     every test above this line is about. Patched rather than served from the fake
@@ -287,10 +289,12 @@ def wire(
     monkeypatch.setattr(step, "VacancyRepository", lambda _session: vacancies)
     monkeypatch.setattr(embeddings, "get_provider", lambda: provider)
 
-    async def ranking_profile(_session: object) -> tuple[UUID, Sequence[float]] | None:
-        return profile
+    answer = list(profiles) if profiles is not None else ([profile] if profile else [])
 
-    monkeypatch.setattr(step, "_ranking_profile", ranking_profile)
+    async def ranking_profiles(_session: object) -> list[tuple[UUID, Sequence[float]]]:
+        return answer
+
+    monkeypatch.setattr(step, "_ranking_profiles", ranking_profiles)
     return vacancies
 
 
@@ -1626,3 +1630,47 @@ async def test_every_line_the_script_prints_survives_a_cp1251_console(
     printed = capsys.readouterr().out
     assert printed.strip(), "there is a report to check"
     printed.encode("cp1251")
+
+
+@pytest.mark.unit
+async def test_every_ranking_profile_gets_its_own_walk_default_first(
+    monkeypatch: pytest.MonkeyPatch, session: FakeSession, log: list[str]
+) -> None:
+    """Phase 22: the description budget is the union of every profile's top.
+
+    One walk per active profile, in tie-break order, sharing the budgets. A
+    walk that ends because its own top is safe hands over to the next profile;
+    the second walk never re-embeds what the first already wrote.
+    """
+    rows = [candidate(n, title_similarity=0.95 - n * 0.01) for n in range(60)]
+    monkeypatch.setattr(settings, "embedding_batch_size", 4)
+    first = ranked(warmup=8, protect=4, monkeypatch=monkeypatch)
+    second = (uuid4(), first[1])
+
+    alone = wire(monkeypatch, rows, CountingProvider(log), profile=first)
+    single = await embed_pending(as_session(session))
+    both = wire(monkeypatch, rows, CountingProvider(log), profiles=[first, second])
+    union = await embed_pending(as_session(session))
+
+    assert single.stopped == "beyond_reach"
+    assert set(both.near) == {first[0], second[0]}
+    assert both.near.index(first[0]) < both.near.index(second[0])
+    assert union.embedded >= single.embedded
+    assert len(both.written) == union.embedded, "nothing embedded twice"
+    assert set(alone.written) <= set(both.written)
+
+
+@pytest.mark.unit
+async def test_a_spent_budget_does_not_start_the_next_profiles_walk(
+    monkeypatch: pytest.MonkeyPatch, session: FakeSession, log: list[str]
+) -> None:
+    rows = [candidate(n, title_similarity=0.95 - n * 0.01) for n in range(40)]
+    monkeypatch.setattr(settings, "embedding_batch_size", 4)
+    first = ranked(warmup=100, protect=4, monkeypatch=monkeypatch)
+    second = (uuid4(), first[1])
+    vacancies = wire(monkeypatch, rows, CountingProvider(log), profiles=[first, second])
+
+    outcome = await embed_pending(as_session(session), limit=8)
+
+    assert outcome.stopped == "budget"
+    assert second[0] not in vacancies.near

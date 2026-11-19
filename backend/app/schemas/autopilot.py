@@ -51,6 +51,10 @@ class SetAsideKind(StrEnum):
     #: The stored URL does not name the posting's own id, so the agent would
     #: reject the batch it arrived in.
     UNSERVABLE = "unservable"
+    #: The profile that won the vacancy has no ``hh_resume_id``, so the agent
+    #: cannot know which resume to pick in hh's form. This is the backend's
+    #: ``needs_manual``: the vacancy goes to a person with the reason.
+    NO_HH_RESUME = "no_hh_resume"
 
 
 class SetAsideItem(BaseModel):

@@ -1,4 +1,4 @@
-"""The profile's two vectors, computed once when they are missing.
+"""Each active profile's two vectors, computed once when they are missing.
 
 Moved here from ``scripts/run_matching.py`` on 2026-09-16, unchanged in
 behaviour, because the dashboard now starts a rescoring from a button and the
@@ -20,21 +20,27 @@ from app.matching.embeddings import EmbeddingError, encode_profile, encode_texts
 
 
 async def ensure_profile_embedding(session: AsyncSession, *, allowed: bool) -> str | None:
-    """Embed the active profile if it has no vector. Returns a line for the report.
+    """Embed every active profile that has no vector. Returns a line for the report.
+
+    Every active profile, not one: since migration 0018 several are scored at
+    once, and a profile without its vectors would score on rules alone and lose
+    every vacancy to one that has them. These are the only vectors a new
+    profile costs — the vacancies' are shared.
 
     Commits after each vector it writes, so a later failure in the caller does
     not throw away a model call that already succeeded. ``None`` when there is
     no active profile or nothing had to be done.
     """
-    profile = (
-        await session.execute(select(CandidateProfile).where(CandidateProfile.is_active))
-    ).scalar_one_or_none()
-    if profile is None:
-        return None
-    notes = [await _ensure_headline_embedding(session, profile, allowed=allowed)]
-    notes.append(await _ensure_resume_embedding(session, profile, allowed=allowed))
-    written = [note for note in notes if note]
-    return "; ".join(written) if written else None
+    profiles = await ProfileRepository(session).list_active()
+    lines: list[str] = []
+    for profile in profiles:
+        notes = [await _ensure_headline_embedding(session, profile, allowed=allowed)]
+        notes.append(await _ensure_resume_embedding(session, profile, allowed=allowed))
+        written = [note for note in notes if note]
+        if written:
+            prefix = f"{profile.slug}: " if len(profiles) > 1 else ""
+            lines.append(prefix + "; ".join(written))
+    return "; ".join(lines) if lines else None
 
 
 async def _ensure_headline_embedding(

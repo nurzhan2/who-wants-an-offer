@@ -144,6 +144,9 @@ class VacancyListItem(BaseModel):
     salary_min_normalized: Decimal | None
     #: The combined score, whichever mode the list is ranked by.
     score: Decimal | None
+    #: Which of the owner's resumes that score is for: the vacancy's best
+    #: profile unless the list was asked for one profile.
+    profile_slug: str | None = None
     #: The number of the mode the list is ranked by; equal to ``score`` in the
     #: combined mode. None when that number was not measured — in the skills
     #: mode, a posting with no requirements at all.
@@ -292,6 +295,10 @@ class VacancyQuery(VacancyFilter):
     #: table needs neither; the filter sidebar needs both.
     with_total: bool = False
     with_facets: bool = False
+    #: Show one resume's scores instead of each vacancy's best (a slug). Not a
+    #: filter — it changes which number is shown, not which rows exist — so it
+    #: travels with paging, outside :meth:`filters` and its cache key.
+    profile: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,49}$")
 
     def filters(self) -> VacancyFilter:
         """Just the filtering half, as the repository's own contract.

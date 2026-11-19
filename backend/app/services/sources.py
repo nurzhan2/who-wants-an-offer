@@ -32,7 +32,7 @@ from app.sources.query_planner import (
     FALLBACK_HEADLINE_LABEL,
     TARGET_TITLE_LABEL,
     intent_for,
-    plan_queries,
+    plan_for_profiles,
 )
 from app.sources.registry import all_sources, disabled_reason, import_errors
 
@@ -150,11 +150,14 @@ async def search_plan(session: AsyncSession) -> SearchPlanResponse | None:
     the run does. No source is contacted: each one renders its part from the
     plan and from the state it saved last time.
     """
-    profile = await ProfileRepository(session).get_active()
-    if profile is None:
+    profiles = await ProfileRepository(session).list_active()
+    if not profiles:
         return None
-    read = CandidateProfileRead.model_validate(profile)
-    plan = plan_queries(read)
+    reads = [CandidateProfileRead.model_validate(profile) for profile in profiles]
+    # The default profile's titles are the ones the screen edits; the plan is
+    # every active profile's, as the run builds it.
+    read = reads[0]
+    plan = plan_for_profiles(reads)
     states = SourceStateRepository(session)
     quotas = SourceQuotaRepository(session)
 

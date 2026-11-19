@@ -210,6 +210,12 @@ class QueueItem(BaseModel):
     #: ``None`` for every item the owner has not confirmed there — which the
     #: terminal flow does not care about and the dashboard flow refuses to send.
     confirmation: DashboardConfirmation | None = None
+    #: Which of the owner's resumes won this vacancy (migration 0018), by slug,
+    #: and its id on hh — the resume the agent must have selected in hh's
+    #: response form before it may send. Part of the card digest, so a
+    #: confirmation given for one resume does not cover another.
+    profile_slug: str | None = None
+    hh_resume_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{38}$")
 
 
 class QueueResponse(BaseModel):

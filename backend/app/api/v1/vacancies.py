@@ -54,6 +54,7 @@ async def list_vacancies(
         limit=query.limit,
         with_total=query.with_total,
         with_facets=query.with_facets,
+        profile=query.profile,
     )
 
 
