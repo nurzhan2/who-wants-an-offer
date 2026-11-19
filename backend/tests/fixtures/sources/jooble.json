@@ -1,0 +1,35 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://jooble.org/api/about), not a live capture: no key exists and the container had no network. Re-record on the first live run. Two valid jobs and one malformed (no link).",
+  "totalCount": 3,
+  "jobs": [
+    {
+      "title": "Python-разработчик",
+      "location": "Алматы",
+      "snippet": "&nbsp;...опыт работы с <b>Python</b> от 3 лет, Django...&nbsp;",
+      "salary": "от 900 000 ₸",
+      "source": "hh.kz",
+      "type": "Полная занятость",
+      "link": "https://kz.jooble.org/desc/-1234567890123456789?ckey=python",
+      "company": "Kaspi Tech",
+      "updated": "2026-11-18T00:00:00.0000000",
+      "id": -1234567890123456789
+    },
+    {
+      "title": "Backend Developer (Go)",
+      "location": "Астана",
+      "snippet": "Go, gRPC, Kubernetes",
+      "salary": "",
+      "source": "enbek.kz",
+      "type": "",
+      "link": "https://kz.jooble.org/desc/987654321?ckey=go",
+      "company": "",
+      "updated": "2026-11-17T12:30:00.0000000",
+      "id": 987654321
+    },
+    {
+      "title": "Job without a link",
+      "location": "Алматы",
+      "id": 1
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://www.careerjet.com/partners/api/), not a live capture: no affiliate id exists and the container had no network. Re-record on the first live run. Two valid jobs and one malformed (no url).",
+  "type": "JOBS",
+  "hits": 3,
+  "pages": 1,
+  "response_time": 0.05,
+  "jobs": [
+    {
+      "url": "https://jobviewtrack.com/ru-kz/job-1a2b3c/abc123?affid=example",
+      "title": "Python Developer",
+      "company": "Steppe Data",
+      "description": "Ищем <b>Python</b> разработчика...",
+      "locations": "Алматы",
+      "date": "Wed, 18 Nov 2026 08:00:00 GMT",
+      "salary": "600 000 - 900 000 KZT в месяц",
+      "salary_min": 600000,
+      "salary_max": 900000,
+      "salary_currency_code": "KZT",
+      "salary_type": "M",
+      "site": "hh.kz"
+    },
+    {
+      "url": "https://jobviewtrack.com/ru-kz/job-4d5e6f/def456?affid=example",
+      "title": "Data Engineer",
+      "company": "",
+      "description": "Airflow, Spark",
+      "locations": "Астана",
+      "date": "Tue, 17 Nov 2026 10:00:00 GMT",
+      "salary": "",
+      "salary_min": "",
+      "salary_max": "",
+      "salary_currency_code": "",
+      "salary_type": "",
+      "site": "enbek.kz"
+    },
+    {
+      "title": "Job without a url",
+      "company": "Broken"
+    }
+  ]
+}
