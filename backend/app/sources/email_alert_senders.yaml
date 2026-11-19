@@ -1,0 +1,30 @@
+# Which senders' letters the `email_alerts` source reads, and how each is parsed.
+# Nothing from any other sender is ever fetched: the IMAP search is built from
+# this list, so a letter from a person is not even downloaded.
+#
+# HONESTY NOTE (19 Nov 2026): the addresses and link shapes are written from
+# memory of these services' alert letters, in a container with no mailbox.
+# The first run with real credentials logs `sources.email_alerts.no_jobs` for a
+# letter from a listed sender in which no job link was recognised — that is the
+# signal to correct `links` here. Tests run on synthetic letters.
+#
+# `links` are regular expressions over the href; group 1 is the job id. The
+# stored URL is rebuilt from the id (`canonical`), so the tracking parameters
+# these letters carry — which identify the owner — are never stored.
+senders:
+  - key: linkedin
+    from: ["jobalerts-noreply@linkedin.com", "jobs-noreply@linkedin.com"]
+    links: ['linkedin\.com/(?:comm/)?jobs/view/(\d+)']
+    canonical: "https://www.linkedin.com/jobs/view/{id}/"
+  - key: indeed
+    from: ["alert@indeed.com", "noreply@indeed.com", "donotreply@jobalert.indeed.com"]
+    links: ['indeed\.[a-z.]+/(?:rc/clk|viewjob|pagead/clk)\?[^"]*?jk=([0-9a-f]{8,20})']
+    canonical: "https://www.indeed.com/viewjob?jk={id}"
+  - key: glassdoor
+    from: ["noreply@glassdoor.com", "jobs-noreply@glassdoor.com"]
+    links: ['glassdoor\.[a-z.]+/[^"]*?(?:jobListingId=|_JV_[A-Z0-9_]*?|JV_KO[\d,]+_KE[\d,]+\.htm\?jl=)(\d{6,})']
+    canonical: "https://www.glassdoor.com/job-listing/index.htm?jl={id}"
+  - key: hh
+    from: ["noreply@hh.kz", "noreply@hh.ru", "vacancy@hh.kz", "vacancy@hh.ru"]
+    links: ['hh\.(?:kz|ru)/vacancy/(\d+)']
+    canonical: "https://hh.kz/vacancy/{id}"

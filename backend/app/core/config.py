@@ -336,6 +336,20 @@ class Settings(BaseSettings):
     telegram_api_hash: SecretStr | None = None
     telegram_session_path: Path | None = None
 
+    # ── Job-alert e-mails (IMAP, read-only) ───────────────────────────
+    #: The owner's own mailbox, where LinkedIn, Indeed, Glassdoor and hh send
+    #: the job alerts they subscribed to. Read only: the folder is opened
+    #: read-only and messages are fetched with BODY.PEEK, so nothing is marked
+    #: read, moved or answered. The password is an app password, never the
+    #: account's own.
+    email_alerts_imap_host: str = "imap.gmail.com"
+    email_alerts_imap_port: Annotated[int, Field(ge=1, le=65535)] = 993
+    email_alerts_imap_user: str | None = None
+    email_alerts_imap_password: SecretStr | None = None
+    email_alerts_folder: str = "INBOX"
+    #: How far back the first run looks. Later runs continue from the last UID.
+    email_alerts_since_days: Annotated[int, Field(ge=1, le=365)] = 14
+
     # ── Notifications (Telegram bot) ──────────────────────────────────
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
