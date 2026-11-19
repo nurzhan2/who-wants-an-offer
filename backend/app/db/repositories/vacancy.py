@@ -326,6 +326,17 @@ class VacancyRepository:
             index_elements=[Vacancy.fingerprint],
             set_={
                 **{column: insert_vacancy.excluded[column] for column in REFRESHABLE_COLUMNS},
+                # A description is never replaced by its absence. A stub — an
+                # e-mail alert carrying a title and a company, a feed that sends
+                # headlines — fingerprinting onto a posting we hold in full used
+                # to write NULL over the text, while ``completeness`` (below)
+                # kept saying ``full``. Phase 22 makes stubs routine, and its
+                # whole point for LinkedIn and Indeed is the opposite: the stub
+                # gets its description from the jsearch or ATS row it matches.
+                **{
+                    column: func.coalesce(insert_vacancy.excluded[column], getattr(Vacancy, column))
+                    for column in ("description_raw", "description_md")
+                },
                 # Completeness only ever improves. PostgreSQL orders an enum by
                 # declaration, and vacancy_completeness is declared best-first
                 # ('full', 'snippet', 'stub'), so LEAST is "the more complete of
