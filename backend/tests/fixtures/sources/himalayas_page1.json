@@ -1,0 +1,50 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://himalayas.app/api), not a live capture: the container that wrote it had no network. Re-record on the first live run. Page 1 of 2: two valid postings and one malformed entry (no guid).",
+  "updatedAt": 1795435200,
+  "offset": 0,
+  "limit": 20,
+  "totalCount": 5,
+  "jobs": [
+    {
+      "title": "Senior Python Backend Engineer",
+      "excerpt": "Build the APIs behind our billing platform.",
+      "companyName": "Northwind Labs",
+      "companyLogo": "https://cdn.himalayas.app/logos/northwind.png",
+      "employmentType": "Full Time",
+      "minSalary": 90000,
+      "maxSalary": 120000,
+      "seniority": ["Senior"],
+      "currency": "USD",
+      "locationRestrictions": ["Germany", "Poland"],
+      "timezoneRestrictions": [1, 2],
+      "categories": ["Backend", "Python"],
+      "parentCategories": ["Engineering"],
+      "description": "<p>We use <strong>Python</strong>, FastAPI and PostgreSQL.</p>",
+      "pubDate": 1795420800,
+      "expiryDate": 1798012800,
+      "applicationLink": "https://jobs.northwind.example/apply/123",
+      "guid": "https://himalayas.app/companies/northwind-labs/jobs/senior-python-backend-engineer"
+    },
+    {
+      "title": "Product Designer",
+      "excerpt": "Own the design system.",
+      "companyName": "Pixel Forge",
+      "employmentType": "Full Time",
+      "minSalary": null,
+      "maxSalary": null,
+      "seniority": ["Mid-level"],
+      "currency": "USD",
+      "locationRestrictions": [],
+      "categories": ["Design"],
+      "description": "<p>Figma, prototyping, user research.</p>",
+      "pubDate": 1795410000,
+      "applicationLink": "https://pixelforge.example/careers/designer",
+      "guid": "https://himalayas.app/companies/pixel-forge/jobs/product-designer"
+    },
+    {
+      "title": "Broken entry without a guid",
+      "companyName": "Nowhere Inc",
+      "description": "<p>Python</p>"
+    }
+  ]
+}
