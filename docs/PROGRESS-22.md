@@ -67,3 +67,26 @@
 - Отклик: `ManualApply` в карточке — пост, контакт, текст для копирования (приветствие + письмо) · ТЗ п. 5; ничего не отправляется · `test_the_card_offers_the_post_the_contact_and_a_message_to_copy`
 - Вход: `python -m app.sources.telegram_login`, телефон через `input`, код и пароль через `getpass`, ничего не логируется; путь сессии внутри репозитория — отказ; права 600 · STOP 1 · ручная проверка невозможна без номера
 - **STOP 1 (Telegram)**: нужен номер владельца, код и `api_id/api_hash` с my.telegram.org. Всё остальное сделано.
+
+## Фаза D — мировые источники
+
+- Коннекторы писали два агента в отдельных worktree, только новыми файлами; слито в ветку, общий `pyproject.toml` — ручное разрешение конфликта · правило 5 ENGINEERING (источник — один файл) · полный прогон после слияния: 3134 passed
+- `email_alerts` — IMAP с паролем приложения, а не Gmail API · не нужен OAuth-клиент и новые зависимости; IMAP есть у любой почты · `test_sources_email_alerts.py`
+- Папка открывается `readonly=True`, письма — `BODY.PEEK[]` · «только чтение»: ничего не помечается прочитанным · код `ImapMailbox`
+- Поиск IMAP строится из белого списка отправителей · письмо человека даже не скачивается · `email_alert_senders.yaml`
+- Ссылка на вакансию собирается из id, параметры трекинга отбрасываются · они идентифицируют владельца · `test_a_linkedin_card_gives_title_company_and_place_and_drops_the_tracking`
+- Хранится только извлечённое и `Message-ID` · ТЗ «письма не хранятся целиком» · `test_a_run_yields_stubs_with_the_letter_id_and_never_the_letter`
+- Город у вакансий из писем не ставится, место — в `_derived.location` · fingerprint включает город, а jsearch его не ставит; иначе описание из jsearch не доехало бы · тот же тест
+- В модуле нет ни одного HTTP-запроса · ТЗ «не открывать страницы LinkedIn/Indeed даже по ссылке из письма» · `test_the_module_makes_no_http_request_at_all`
+- **Баг найден и исправлен:** заглушка без описания при совпадении fingerprint затирала имеющееся описание `NULL` · без этого путь «описание из jsearch/ATS» не работал бы · `test_a_stub_from_a_letter_keeps_the_description_another_source_wrote`
+- Форматы писем (адреса, шаблоны ссылок) — по памяти, синтетические фикстуры · ящика нет; первый прогон логирует `no_jobs` для письма без распознанных вакансий — сигнал поправить yaml · `test_a_letter_with_no_recognisable_job_is_reported`
+- **STOP 1+2 (почта):** нужен ящик владельца и пароль приложения (`EMAIL_ALERTS_IMAP_USER/PASSWORD`), подписки на Job Alerts в LinkedIn/Indeed/Glassdoor/hh
+- jsearch: квота 200/мес не менялась, треки приходят через `plan_for_profiles` в ту же ротацию · «распредели по ротации» · `test_the_plan_looks_for_every_track_default_first`
+- ATS ×6 (`greenhouse`, `lever`, `ashby`, `workable`, `smartrecruiters`, `recruitee`), 35 бордов `verified: false` + `scripts/verify_ats_boards.py` · «проверь одним запросом при первом прогоне» — скрипт делает ровно это; 404 в прогоне не роняет источник · `test_sources_ats.py`
+- Workable — через публичный виджет · `/api/v1/jobs?token=` требует токен работодателя · докстринг `workable.py`
+- `himalayas`, `remoteok`, `jobicy`, `weworkremotely` (RSS через `xml.etree` с отказом от DTD/ENTITY, без `feedparser`), `hn_hiring`, `freehire` · без новых зависимостей; RSS без DTD нечему раскрывать · `test_sources_remote_boards.py`
+- `adzuna`, `jooble`, `careerjet` — до ключа, без ключа неактивны · **STOP 2** · `test_sources_keyed.py`
+- `app_id`/`affid` добавлены в маскируемые параметры URL · они называют аккаунт владельца у вендора · `test_redact_also_hides_the_account_identifiers_adzuna_and_careerjet_send`
+- HTML-источники `habr`, `getmatch`, `djinni`, `enbek` не реализованы · ТЗ: только после проверки robots.txt каждого; проверить нельзя (сеть) · —
+- Ручной импорт: slug `linkedin_manual` как в SOURCES.md; один URL, без рекурсии, LinkedIn/Indeed/Glassdoor не открываются (нужен текст), остальные — один анонимный GET с robots.txt, чтение schema.org JobPosting · ТЗ и SOURCES.md · `test_manual_import.py`
+- Кнопка «Добавить вакансию вручную» на экране вакансий · ТЗ п. 4 · `npm run typecheck/lint/build`
