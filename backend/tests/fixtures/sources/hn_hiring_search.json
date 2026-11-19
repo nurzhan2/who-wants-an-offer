@@ -1,0 +1,41 @@
+{
+  "_comment": "RECONSTRUCTED from the HN Search API documentation (https://hn.algolia.com/api), not a live capture: the container that wrote it had no network. Re-record on the first live run. The author's three monthly stories plus last month's hiring thread; the newest 'Ask HN: Who is hiring?' is objectID 46100000, and the 'Who wants to be hired?' story is newer still so picking by date alone would be wrong.",
+  "hits": [
+    {
+      "objectID": "46100002",
+      "title": "Ask HN: Who wants to be hired? (November 2026)",
+      "author": "whoishiring",
+      "created_at": "2026-11-02T16:00:30.000Z",
+      "created_at_i": 1793635230,
+      "story_id": 46100002
+    },
+    {
+      "objectID": "46100001",
+      "title": "Ask HN: Freelancer? Seeking freelancer? (November 2026)",
+      "author": "whoishiring",
+      "created_at": "2026-11-02T16:00:20.000Z",
+      "created_at_i": 1793635220,
+      "story_id": 46100001
+    },
+    {
+      "objectID": "46100000",
+      "title": "Ask HN: Who is hiring? (November 2026)",
+      "author": "whoishiring",
+      "created_at": "2026-11-02T16:00:10.000Z",
+      "created_at_i": 1793635210,
+      "story_id": 46100000
+    },
+    {
+      "objectID": "45700000",
+      "title": "Ask HN: Who is hiring? (October 2026)",
+      "author": "whoishiring",
+      "created_at": "2026-10-01T15:00:10.000Z",
+      "created_at_i": 1790866810,
+      "story_id": 45700000
+    }
+  ],
+  "nbHits": 4,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 20
+}

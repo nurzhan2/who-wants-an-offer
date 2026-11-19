@@ -1,0 +1,11 @@
+remoteok.json is RECONSTRUCTED from the public API's documented shape
+(https://remoteok.com/api), not a live capture: the container that wrote it had
+no network. The payload is a bare JSON array, so it cannot carry a "_comment"
+key of its own; this file says it instead.
+
+Contents: the legal notice element first (where the live API serves it), two
+valid postings (one with a string id and salaries, one with a numeric id and
+the zero/empty salaries that mean "not stated"), and one malformed entry with
+no "position".
+
+Re-record it on the first live run.

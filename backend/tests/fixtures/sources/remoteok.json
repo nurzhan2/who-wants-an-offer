@@ -1,0 +1,44 @@
+[
+  {
+    "last_updated": 1795435200,
+    "legal": "API Terms of Service: Please link back (with follow, not nofollow!) to the URL on Remote OK and mention Remote OK as a source, so we get traffic back from your site. If you do not we'll have to suspend API access."
+  },
+  {
+    "slug": "remote-senior-python-engineer-acme-1001",
+    "id": "1001",
+    "epoch": 1795420800,
+    "date": "2026-11-19T08:00:00+00:00",
+    "company": "Acme ",
+    "company_logo": "",
+    "position": "Senior Python Engineer",
+    "tags": ["python", "backend", "postgres"],
+    "logo": "",
+    "description": "<p>Work on our <b>Django</b> monolith.</p>",
+    "location": "Worldwide",
+    "salary_min": 100000,
+    "salary_max": 140000,
+    "apply_url": "https://remoteok.com/remote-jobs/1001/apply",
+    "url": "https://remoteok.com/remote-jobs/remote-senior-python-engineer-acme-1001"
+  },
+  {
+    "slug": "remote-marketing-lead-brandly-1002",
+    "id": 1002,
+    "epoch": 1795410000,
+    "date": "2026-11-19T05:00:00+00:00",
+    "company": "Brandly",
+    "position": "Marketing Lead",
+    "tags": ["marketing"],
+    "description": "<p>Own our growth funnel.</p>",
+    "location": "",
+    "salary_min": 0,
+    "salary_max": "",
+    "url": "https://remoteok.com/remote-jobs/remote-marketing-lead-brandly-1002"
+  },
+  {
+    "slug": "remote-broken-1003",
+    "id": "1003",
+    "company": "Missing Position Ltd",
+    "description": "<p>python</p>",
+    "url": "https://remoteok.com/remote-jobs/remote-broken-1003"
+  }
+]

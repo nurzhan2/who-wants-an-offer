@@ -1,0 +1,47 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://developer.adzuna.com/docs/search), not a live capture: no key exists and the container had no network. Re-record on the first live run. Two valid results (one with a predicted salary, which must not reach _derived) and one malformed result (no redirect_url).",
+  "__CLASS__": "Adzuna::API::Response::JobSearchResults",
+  "count": 3,
+  "mean": 65000,
+  "results": [
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "4711000001",
+      "adref": "eyJhbGciOiJIUzI1NiJ9",
+      "title": "Python Developer (m/w/d)",
+      "description": "Wir suchen einen Python Developer mit Erfahrung in Django und PostgreSQL ...",
+      "redirect_url": "https://www.adzuna.de/land/ad/4711000001?se=abc&v=1",
+      "created": "2026-11-17T10:00:00Z",
+      "company": {"__CLASS__": "Adzuna::API::Response::Company", "display_name": "Berlin Bytes GmbH"},
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Berlin, Deutschland",
+        "area": ["Deutschland", "Berlin"]
+      },
+      "category": {"__CLASS__": "Adzuna::API::Response::Category", "label": "IT-Stellen", "tag": "it-jobs"},
+      "salary_min": 60000,
+      "salary_max": 75000,
+      "salary_is_predicted": "0",
+      "contract_time": "full_time"
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": 4711000002,
+      "title": "Backend Engineer Python",
+      "description": "Remote-first team, Python and AWS ...",
+      "redirect_url": "https://www.adzuna.de/land/ad/4711000002?se=abc&v=1",
+      "created": "2026-11-16T08:30:00Z",
+      "company": {"display_name": "Cloud Nord"},
+      "location": {"display_name": "Hamburg", "area": ["Deutschland", "Hamburg"]},
+      "salary_min": 55000.0,
+      "salary_max": 55000.0,
+      "salary_is_predicted": "1"
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "4711000003",
+      "title": "Result without a redirect_url",
+      "description": "..."
+    }
+  ]
+}

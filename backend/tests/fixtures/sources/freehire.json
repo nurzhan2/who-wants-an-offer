@@ -1,0 +1,38 @@
+{
+  "_comment": "GUESSED SHAPE, not a live capture and not taken from vendor documentation: the only description available offline was the docs/SOURCES.md catalogue line ('public REST, JSON, no key; skills, grade, category'). The connector's parser is deliberately tolerant of the field names; the first live run must confirm the endpoint path and the real shape, then this file must be re-recorded. Two valid postings (one with a nested company and skill objects) and one malformed entry (no url).",
+  "jobs": [
+    {
+      "id": 9001,
+      "title": "Python Backend Developer",
+      "company": {"name": "Steppe Soft"},
+      "url": "https://freehire.me/jobs/9001",
+      "description": "<p>FastAPI, PostgreSQL, Docker.</p>",
+      "location": "Almaty",
+      "remote": false,
+      "skills": [{"name": "Python"}, {"name": "FastAPI"}],
+      "grade": "middle",
+      "category": "backend",
+      "published_at": "2026-11-18T12:00:00Z",
+      "salary_from": 800000,
+      "salary_to": 1200000,
+      "currency": "KZT"
+    },
+    {
+      "id": "9002",
+      "title": "Frontend Engineer",
+      "company_name": "Remote First",
+      "link": "https://freehire.me/jobs/9002",
+      "description": "<p>React and TypeScript.</p>",
+      "location": "",
+      "is_remote": true,
+      "tags": ["react", "typescript"],
+      "seniority": "senior",
+      "created_at": 1795420800
+    },
+    {
+      "id": 9003,
+      "title": "No url here",
+      "description": "<p>Python</p>"
+    }
+  ]
+}

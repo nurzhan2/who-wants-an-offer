@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RECONSTRUCTED from the shape of the public RSS feed
+  https://weworkremotely.com/remote-jobs.rss, not a live capture: the
+  container that wrote it had no network. Re-record on the first live run.
+  Three items: a backend posting (also present in the back-end category feed,
+  so the cross-feed dedup is exercised), a sales posting, and a malformed item
+  with no link and no guid.
+-->
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>We Work Remotely: Remote jobs in design, programming, marketing and more</title>
+    <link>https://weworkremotely.com/</link>
+    <description>Remote jobs</description>
+    <item>
+      <title>Acme Cloud: Senior Backend Engineer (Python)</title>
+      <region>Anywhere in the World</region>
+      <country>Anywhere</country>
+      <skills>Python, PostgreSQL, AWS</skills>
+      <category>Back-End Programming</category>
+      <type>Full-Time</type>
+      <description>&lt;p&gt;We are hiring a &lt;strong&gt;Python&lt;/strong&gt; engineer to build our API.&lt;/p&gt;</description>
+      <pubDate>Wed, 18 Nov 2026 14:00:00 +0000</pubDate>
+      <expires_at>Fri, 18 Dec 2026 14:00:00 +0000</expires_at>
+      <guid>https://weworkremotely.com/remote-jobs/acme-cloud-senior-backend-engineer-python</guid>
+      <link>https://weworkremotely.com/remote-jobs/acme-cloud-senior-backend-engineer-python</link>
+      <media:content url="https://wwr-pro.s3.amazonaws.com/logos/acme.png" type="image/png"/>
+    </item>
+    <item>
+      <title>Sellwell: Account Executive</title>
+      <region>USA Only</region>
+      <category>Sales and Marketing</category>
+      <type>Full-Time</type>
+      <description><![CDATA[<p>Close deals with mid-market customers.</p>]]></description>
+      <pubDate>Tue, 17 Nov 2026 09:30:00 +0000</pubDate>
+      <guid>https://weworkremotely.com/remote-jobs/sellwell-account-executive</guid>
+      <link>https://weworkremotely.com/remote-jobs/sellwell-account-executive</link>
+    </item>
+    <item>
+      <title>Broken Co: Item without a link</title>
+      <description>&lt;p&gt;Python&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

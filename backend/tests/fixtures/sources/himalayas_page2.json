@@ -1,0 +1,29 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://himalayas.app/api), not a live capture. Re-record on the first live run. Page 2 of 2: offset 3 plus these two entries reaches totalCount 5, which ends the walk.",
+  "offset": 3,
+  "limit": 20,
+  "totalCount": 5,
+  "jobs": [
+    {
+      "title": "Go Developer",
+      "companyName": "Gopher Works",
+      "currency": "EUR",
+      "minSalary": 70000,
+      "maxSalary": 0,
+      "locationRestrictions": null,
+      "categories": ["Backend"],
+      "description": "<p>Golang microservices.</p>",
+      "pubDate": 1795400000,
+      "applicationLink": "https://gopher.example/jobs/go",
+      "guid": "https://himalayas.app/companies/gopher-works/jobs/go-developer"
+    },
+    {
+      "title": "Data Engineer (Python, Airflow)",
+      "companyName": "Stream Data",
+      "categories": ["Data"],
+      "description": "<p>Airflow and dbt.</p>",
+      "pubDate": 1795390000,
+      "guid": "https://himalayas.app/companies/stream-data/jobs/data-engineer"
+    }
+  ]
+}

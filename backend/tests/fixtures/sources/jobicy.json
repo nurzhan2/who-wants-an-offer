@@ -1,0 +1,48 @@
+{
+  "_comment": "RECONSTRUCTED from the public API documentation (https://jobicy.com/jobs-rss-feed), not a live capture: the container that wrote it had no network. Re-record on the first live run. Two valid postings and one malformed entry (no url).",
+  "apiVersion": "2",
+  "documentationUrl": "https://jobicy.com/jobs-rss-feed",
+  "friendlyNotice": "Please link back to Jobicy and mention it as the source.",
+  "jobCount": 3,
+  "lastUpdate": "2026-11-19 08:00:00",
+  "jobs": [
+    {
+      "id": 501,
+      "url": "https://jobicy.com/jobs/501-backend-developer-fastapi",
+      "jobSlug": "501-backend-developer-fastapi",
+      "jobTitle": "Backend Developer (FastAPI)",
+      "companyName": "Remote Rocket",
+      "companyLogo": "https://jobicy.com/logo/remote-rocket.png",
+      "jobIndustry": ["Programming &amp; Development"],
+      "jobType": ["full-time"],
+      "jobGeo": "EMEA",
+      "jobLevel": "Senior",
+      "jobExcerpt": "Python services for logistics.",
+      "jobDescription": "<p>Python 3.12, FastAPI, Kafka.</p>",
+      "pubDate": "2026-11-18 10:30:00",
+      "annualSalaryMin": "60000",
+      "annualSalaryMax": "85000",
+      "salaryCurrency": "EUR"
+    },
+    {
+      "id": 502,
+      "url": "https://jobicy.com/jobs/502-customer-support",
+      "jobSlug": "502-customer-support",
+      "jobTitle": "Customer Support Specialist",
+      "companyName": "Helpful",
+      "jobIndustry": ["Customer Success"],
+      "jobType": ["part-time"],
+      "jobGeo": "USA",
+      "jobLevel": "Any",
+      "jobExcerpt": "Answer tickets.",
+      "jobDescription": "<p>Zendesk.</p>",
+      "pubDate": "2026-11-17 09:00:00"
+    },
+    {
+      "id": 503,
+      "jobTitle": "Entry with no url",
+      "companyName": "Broken",
+      "jobDescription": "<p>Python</p>"
+    }
+  ]
+}
