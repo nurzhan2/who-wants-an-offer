@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 
 import { href } from '@/app/routes'
 import { VacancyDetail } from '@/pages/VacancyDetail'
+import { ImportVacancy } from '@/components/ImportVacancy'
 import { Counted, Empty, Failure, Loading, NextStep, Pill, Score, Section } from '@/components/ui'
 import { useVacancies, type VacancyQuery } from '@/hooks/queries'
 import { useReorder } from '@/hooks/useMotion'
@@ -73,6 +74,7 @@ export function Vacancies({ selected }: { selected: string | null }) {
 
   return (
     <div className="rise">
+      <ImportVacancy />
       <Section
         title="Вакансии"
         note={`${MODES[mode].note} У каждой строки — что из требований закрыто, а что нет.`}

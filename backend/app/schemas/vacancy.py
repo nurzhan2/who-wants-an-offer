@@ -312,3 +312,27 @@ class VacancyQuery(VacancyFilter):
         """
         kept = set(VacancyFilter.model_fields)
         return VacancyFilter.model_validate(self.model_dump(include=kept))
+
+
+class VacancyImportRequest(BaseModel):
+    """``POST /vacancies/import``: a link, a pasted text, or both. One vacancy."""
+
+    url: str | None = Field(default=None, max_length=1000)
+    text: str | None = Field(default=None, max_length=20_000)
+
+
+class VacancyImported(BaseModel):
+    """What an import stored. Scored on the next «Пересчитать подбор»."""
+
+    vacancy_id: UUID
+    created: bool
+    title: str
+    company: str | None = None
+    #: schema.org, llm, rules or csv: how the posting was read.
+    parsed_by: str
+
+
+class VacancyImportResult(BaseModel):
+    """One or more imported vacancies."""
+
+    items: list[VacancyImported] = Field(default_factory=list)

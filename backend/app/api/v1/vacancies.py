@@ -3,13 +3,21 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ParsingError
 from app.db.session import get_session
 from app.schemas.common import CursorPage
 from app.schemas.dashboard import VacancyCard
-from app.schemas.vacancy import VacancyListItem, VacancyQuery
+from app.schemas.vacancy import (
+    VacancyImported,
+    VacancyImportRequest,
+    VacancyImportResult,
+    VacancyListItem,
+    VacancyQuery,
+)
+from app.services import manual_import
 from app.services import vacancies as vacancies_service
 
 router = APIRouter(prefix="/vacancies", tags=["vacancies"])
@@ -79,3 +87,60 @@ async def read_vacancy(
     if card is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vacancy not found")
     return card
+
+
+@router.post(
+    "/import",
+    status_code=status.HTTP_201_CREATED,
+    response_model=VacancyImported,
+    summary="Add one vacancy by hand: a link, a pasted text, or both",
+)
+async def import_vacancy(
+    payload: VacancyImportRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> VacancyImported:
+    """One vacancy into the common scoring, ``source_slug = linkedin_manual``.
+
+    A link alone is fetched once, anonymously, robots.txt checked — except
+    LinkedIn, Indeed and Glassdoor, which are never opened: paste the text with
+    the link. Nothing the page links to is followed.
+    """
+    imported = await manual_import.import_one(session, url=payload.url, text=payload.text)
+    await session.commit()
+    return VacancyImported(
+        vacancy_id=imported.vacancy_id,
+        created=imported.created,
+        title=imported.title,
+        company=imported.company,
+        parsed_by=imported.parsed_by,
+    )
+
+
+@router.post(
+    "/import/csv",
+    status_code=status.HTTP_201_CREATED,
+    response_model=VacancyImportResult,
+    summary="Add the rows of LinkedIn's 'Saved jobs' export, without fetching anything",
+)
+async def import_csv(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    file: Annotated[UploadFile, File(description="CSV from LinkedIn's data export.")],
+) -> VacancyImportResult:
+    """Every row with a title and an https link becomes a stub vacancy."""
+    content = await file.read(2 * 1024 * 1024 + 1)
+    if len(content) > 2 * 1024 * 1024:
+        raise ParsingError("CSV больше 2 МБ")
+    stored = await manual_import.import_csv(session, content)
+    await session.commit()
+    return VacancyImportResult(
+        items=[
+            VacancyImported(
+                vacancy_id=item.vacancy_id,
+                created=item.created,
+                title=item.title,
+                company=item.company,
+                parsed_by=item.parsed_by,
+            )
+            for item in stored
+        ]
+    )
