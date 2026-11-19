@@ -64,6 +64,8 @@ Thumbs.db
 
 # Working notes for AI agents: kept locally, not part of the project
 prompts/
+# ...but not the LLM prompt templates the code loads at runtime.
+!backend/app/llm/prompts/
 MEGAPROMPT*.md
 03-phase3-sources.md
 cost-optimization.md
