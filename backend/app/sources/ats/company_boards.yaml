@@ -1,0 +1,238 @@
+# Employers whose public ATS boards the ats/ connectors walk, one list per vendor.
+#
+# Each entry:
+#   slug:     the vendor's board token (boards.greenhouse.io/<slug>,
+#             jobs.lever.co/<slug>, jobs.ashbyhq.com/<slug>,
+#             apply.workable.com/<slug>, jobs.smartrecruiters.com/<slug>,
+#             <slug>.recruitee.com)
+#   company:  display name, stored as the posting's company
+#   region:   kz | cis | world — a label for the owner, not a filter
+#   remote:   whether the employer is known to hire remotely at all
+#   note:     why it is here, and how sure the guess is
+#   verified: false until one live request confirmed the board
+#
+# HONESTY NOTE. This list was seeded from memory in a container whose network
+# was closed (every outbound request got a proxy 403), so NOT ONE entry has
+# been checked: a company may have moved to another vendor, renamed its board
+# token, or closed its board. Run
+#
+#     uv run python scripts/verify_ats_boards.py
+#
+# once from a machine with network access. It asks each board once, politely,
+# and prints ok / 404 / count. Set `verified: true` on the boards that answer
+# with jobs, fix or delete the rest. A board that answers 404 during a normal
+# run is logged and skipped, so an unverified entry costs one request, not a
+# failed run.
+#
+# Kazakhstan employers are thin here on purpose: most of them hire through hh,
+# which has its own connector, rather than through these vendors.
+
+greenhouse:
+  - slug: gitlab
+    company: GitLab
+    region: world
+    remote: true
+    note: all-remote company, hires in many countries
+    verified: false
+  - slug: canonical
+    company: Canonical
+    region: world
+    remote: true
+    note: remote-first, hires worldwide including CIS time zones
+    verified: false
+  - slug: grafanalabs
+    company: Grafana Labs
+    region: world
+    remote: true
+    note: remote-first; Go/observability roles
+    verified: false
+  - slug: clickhouse
+    company: ClickHouse
+    region: world
+    remote: true
+    note: remote-friendly; database engineering roles
+    verified: false
+  - slug: mongodb
+    company: MongoDB
+    region: world
+    remote: false
+    note: mostly office/hybrid, some remote roles
+    verified: false
+  - slug: cloudflare
+    company: Cloudflare
+    region: world
+    remote: false
+    note: hybrid; EU offices hire relocation candidates
+    verified: false
+  - slug: datadog
+    company: Datadog
+    region: world
+    remote: false
+    note: hybrid; large engineering board
+    verified: false
+  - slug: wikimedia
+    company: Wikimedia Foundation
+    region: world
+    remote: true
+    note: remote-first, hires in many countries
+    verified: false
+  - slug: mozilla
+    company: Mozilla
+    region: world
+    remote: true
+    note: remote roles in several countries
+    verified: false
+  - slug: indrive
+    company: inDrive
+    region: kz
+    remote: false
+    note: founded in Yakutsk, large Almaty office; vendor NOT confirmed, may be on another ATS
+    verified: false
+
+lever:
+  - slug: palantir
+    company: Palantir
+    region: world
+    remote: false
+    note: office-based; large board, good test of a big payload
+    verified: false
+  - slug: plaid
+    company: Plaid
+    region: world
+    remote: false
+    note: hybrid, US/EU
+    verified: false
+  - slug: binance
+    company: Binance
+    region: world
+    remote: true
+    note: remote roles worldwide, hires in CIS; low confidence the board token is current
+    verified: false
+  - slug: spotify
+    company: Spotify
+    region: world
+    remote: false
+    note: EU hubs with relocation
+    verified: false
+  - slug: toptal
+    company: Toptal
+    region: world
+    remote: true
+    note: fully remote core team; low confidence on vendor
+    verified: false
+
+ashby:
+  - slug: posthog
+    company: PostHog
+    region: world
+    remote: true
+    note: all-remote, EU/US time zones
+    verified: false
+  - slug: supabase
+    company: Supabase
+    region: world
+    remote: true
+    note: all-remote, hires worldwide
+    verified: false
+  - slug: deel
+    company: Deel
+    region: world
+    remote: true
+    note: all-remote, hires worldwide including CIS
+    verified: false
+  - slug: duck-duck-go
+    company: DuckDuckGo
+    region: world
+    remote: true
+    note: all-remote; board token spelling is a guess
+    verified: false
+  - slug: linear
+    company: Linear
+    region: world
+    remote: true
+    note: remote in North America and Europe
+    verified: false
+  - slug: replit
+    company: Replit
+    region: world
+    remote: false
+    note: mostly hybrid, some remote
+    verified: false
+  - slug: higgsfield
+    company: Higgsfield AI
+    region: kz
+    remote: false
+    note: AI startup with an engineering team in Almaty; vendor and token are a guess
+    verified: false
+
+workable:
+  - slug: skroutz
+    company: Skroutz
+    region: world
+    remote: false
+    note: Athens; known Workable user; low confidence on token
+    verified: false
+  - slug: blueground
+    company: Blueground
+    region: world
+    remote: false
+    note: Athens/EU; low confidence on token
+    verified: false
+  - slug: innowise
+    company: Innowise
+    region: cis
+    remote: true
+    note: outsourcing company hiring across CIS; vendor is a guess
+    verified: false
+  - slug: andersen
+    company: Andersen
+    region: cis
+    remote: true
+    note: outsourcing company hiring across CIS and Kazakhstan; vendor is a guess
+    verified: false
+
+smartrecruiters:
+  - slug: Visa
+    company: Visa
+    region: world
+    remote: false
+    note: large board; good pagination test
+    verified: false
+  - slug: BoschGroup
+    company: Bosch
+    region: world
+    remote: false
+    note: large board, includes EU relocation roles
+    verified: false
+  - slug: Ubisoft2
+    company: Ubisoft
+    region: world
+    remote: false
+    note: gamedev, EU studios; token spelling remembered, not checked
+    verified: false
+  - slug: Wargaming
+    company: Wargaming
+    region: cis
+    remote: false
+    note: gamedev, hires CIS relocation candidates; vendor is a guess
+    verified: false
+
+recruitee:
+  - slug: printify
+    company: Printify
+    region: world
+    remote: true
+    note: Riga-based, remote roles; vendor is a guess
+    verified: false
+  - slug: hostinger
+    company: Hostinger
+    region: world
+    remote: true
+    note: Vilnius-based, remote roles, hires CIS; vendor is a guess
+    verified: false
+  - slug: paysera
+    company: Paysera
+    region: cis
+    remote: false
+    note: Vilnius fintech with CIS reach; vendor is a guess
+    verified: false

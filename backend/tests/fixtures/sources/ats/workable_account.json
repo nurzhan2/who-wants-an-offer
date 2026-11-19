@@ -1,0 +1,51 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC KNOWLEDGE, NOT A LIVE CAPTURE. Shaped after the response of Workable's public careers widget endpoint (GET apply.workable.com/api/v1/widget/accounts/{account}) as known when written; that endpoint is not formally documented and the container's network was closed. Whether ?details=true adds 'description' on this endpoint is UNVERIFIED. Companies, codes and texts are invented. Re-record from a live account on the first run with network access. The third entry is malformed (no shortcode).",
+  "name": "Example Co",
+  "description": null,
+  "jobs": [
+    {
+      "title": "Python Developer",
+      "shortcode": "A1B2C3D4E5",
+      "code": "",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Engineering",
+      "url": "https://apply.workable.com/j/A1B2C3D4E5",
+      "shortlink": "https://apply.workable.com/j/A1B2C3D4E5",
+      "application_url": "https://apply.workable.com/j/A1B2C3D4E5/apply",
+      "published_on": "2026-11-10",
+      "created_at": "2026-11-10",
+      "country": "Kazakhstan",
+      "city": "Astana",
+      "state": "",
+      "education": "",
+      "experience": "Mid-Senior level",
+      "function": "Engineering",
+      "industry": "Computer Software",
+      "locations": [{"country": "Kazakhstan", "countryCode": "KZ", "city": "Astana", "region": "Astana", "hidden": false}],
+      "description": "<p>Django, Celery and PostgreSQL for a logistics platform.</p>"
+    },
+    {
+      "title": "QA Engineer",
+      "shortcode": "F6G7H8J9K0",
+      "code": "",
+      "employment_type": "Full-time",
+      "telecommuting": false,
+      "department": "Quality",
+      "url": "https://apply.workable.com/j/F6G7H8J9K0",
+      "shortlink": "https://apply.workable.com/j/F6G7H8J9K0",
+      "application_url": "https://apply.workable.com/j/F6G7H8J9K0/apply",
+      "published_on": "2026-11-09",
+      "created_at": "2026-11-09",
+      "country": "",
+      "city": "",
+      "state": "",
+      "function": "",
+      "locations": [{"country": "Georgia", "countryCode": "GE", "city": "Tbilisi", "region": "Tbilisi", "hidden": false}]
+    },
+    {
+      "title": "Malformed entry",
+      "url": "https://apply.workable.com/j/ZZZ"
+    }
+  ]
+}

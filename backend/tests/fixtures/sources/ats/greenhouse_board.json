@@ -1,0 +1,53 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE. Shaped after the Greenhouse Job Board API documentation (GET /v1/boards/{token}/jobs?content=true) as known when written; the container's network was closed. Companies, ids and texts are invented. Re-record from a live board on the first run with network access. The fourth entry is deliberately malformed (no id, no absolute_url).",
+  "jobs": [
+    {
+      "id": 4012345001,
+      "internal_job_id": 3011111001,
+      "title": "Senior Backend Engineer (Python)",
+      "updated_at": "2026-11-10T09:15:00-05:00",
+      "requisition_id": "ENG-101",
+      "location": {"name": "Remote - EMEA"},
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/4012345001",
+      "language": "en",
+      "metadata": null,
+      "content": "&lt;p&gt;We build &lt;strong&gt;data pipelines&lt;/strong&gt; in Python and PostgreSQL.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;FastAPI&lt;/li&gt;&lt;li&gt;Kafka&lt;/li&gt;&lt;/ul&gt;",
+      "departments": [{"id": 11, "name": "Engineering", "parent_id": null, "child_ids": []}],
+      "offices": [{"id": 21, "name": "Remote", "location": "Remote", "parent_id": null, "child_ids": []}]
+    },
+    {
+      "id": 4012345002,
+      "internal_job_id": 3011111002,
+      "title": "Product Designer",
+      "updated_at": "2026-11-09T12:00:00-05:00",
+      "requisition_id": "DES-7",
+      "location": {"name": "Berlin, Germany"},
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/4012345002",
+      "language": "en",
+      "metadata": null,
+      "content": "&lt;p&gt;Figma, user research and a design system.&lt;/p&gt;",
+      "departments": [{"id": 12, "name": "Design", "parent_id": null, "child_ids": []}],
+      "offices": [{"id": 22, "name": "Berlin", "location": "Berlin, Germany", "parent_id": null, "child_ids": []}]
+    },
+    {
+      "id": 4012345003,
+      "internal_job_id": 3011111003,
+      "title": "Site Reliability Engineer",
+      "updated_at": "2026-11-08T08:30:00-05:00",
+      "requisition_id": null,
+      "location": {"name": ""},
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/4012345003",
+      "language": "en",
+      "metadata": null,
+      "content": "&lt;p&gt;Kubernetes, Terraform and on-call for a Go platform.&lt;/p&gt;",
+      "departments": null,
+      "offices": [{"id": 23, "name": "Amsterdam", "location": "Amsterdam, Netherlands", "parent_id": null, "child_ids": []}]
+    },
+    {
+      "title": "Broken entry without id or link",
+      "location": {"name": "Nowhere"},
+      "content": "&lt;p&gt;Python&lt;/p&gt;"
+    }
+  ],
+  "meta": {"total": 4}
+}

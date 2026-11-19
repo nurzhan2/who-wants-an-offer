@@ -1,0 +1,17 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE. Shaped after the SmartRecruiters Posting API detail response (GET /v1/companies/{company}/postings/{id}) as known when written; the container's network was closed. Re-record on the first live run.",
+  "id": "744000100000001",
+  "name": "Senior Python Developer",
+  "company": {"identifier": "ExampleCo", "name": "Example Co"},
+  "location": {"city": "Warsaw", "country": "pl", "remote": false},
+  "applyUrl": "https://jobs.smartrecruiters.com/ExampleCo/744000100000001-senior-python-developer?oga=true",
+  "postingUrl": "https://jobs.smartrecruiters.com/ExampleCo/744000100000001-senior-python-developer",
+  "jobAd": {
+    "sections": {
+      "companyDescription": {"title": "Company Description", "text": "<p>Example Co ships logistics software.</p>"},
+      "jobDescription": {"title": "Job Description", "text": "<p>Design Python services on AWS.</p>"},
+      "qualifications": {"title": "Qualifications", "text": "<ul><li>Python</li><li>Django</li></ul>"},
+      "additionalInformation": {"title": "Additional Information", "text": "<p>Hybrid, two days in the office.</p>"}
+    }
+  }
+}

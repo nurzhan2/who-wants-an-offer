@@ -1,0 +1,23 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE. Second page for smartrecruiters_page1.json: one remote posting with no city, and one malformed entry (no name). Re-record on the first live run.",
+  "offset": 100,
+  "limit": 100,
+  "totalFound": 4,
+  "content": [
+    {
+      "id": "744000100000003",
+      "name": "Backend Engineer (Remote)",
+      "company": {"identifier": "ExampleCo", "name": "Example Co"},
+      "releasedDate": "2026-11-10T08:00:00.000Z",
+      "location": {"city": null, "region": null, "country": "pl", "remote": true, "fullLocation": "Remote, Poland"},
+      "department": {"id": "1", "label": "Engineering"},
+      "function": {"id": "information_technology", "label": "Information Technology"},
+      "ref": "https://api.smartrecruiters.com/v1/companies/ExampleCo/postings/744000100000003"
+    },
+    {
+      "id": "744000100000004",
+      "company": {"identifier": "ExampleCo", "name": "Example Co"},
+      "location": {"city": "Krakow", "remote": false}
+    }
+  ]
+}

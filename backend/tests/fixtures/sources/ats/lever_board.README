@@ -1,0 +1,9 @@
+lever_board.json — RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE.
+
+Lever's Postings API answers GET /v0/postings/{company}?mode=json with a bare
+JSON array, so this note lives beside the fixture instead of in a "_comment"
+key. The shape follows the public documentation at
+https://github.com/lever/postings-api as known when it was written; the
+container's network was closed, so nothing here was fetched. Companies, ids and
+texts are invented. The third entry is deliberately malformed (no "text", no
+"hostedUrl"). Re-record from a live board on the first run with network access.

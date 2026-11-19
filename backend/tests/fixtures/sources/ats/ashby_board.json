@@ -1,0 +1,68 @@
+{
+  "_comment": "RECONSTRUCTED FROM PUBLIC DOCS, NOT A LIVE CAPTURE. Shaped after Ashby's public job posting API documentation (GET /posting-api/job-board/{name}?includeCompensation=true) as known when written; the container's network was closed. Companies, ids and texts are invented. Re-record from a live board on the first run with network access. The third entry is unlisted (isListed false) and must be skipped; the fourth is malformed (no jobUrl).",
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "title": "Senior Python Engineer",
+      "department": "Engineering",
+      "team": "Platform",
+      "employmentType": "FullTime",
+      "location": "Almaty, Kazakhstan",
+      "secondaryLocations": [],
+      "publishedAt": "2026-11-12T10:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "Hybrid",
+      "address": {
+        "postalAddress": {
+          "addressLocality": "Almaty",
+          "addressRegion": "Almaty",
+          "addressCountry": "Kazakhstan"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/exampleco/a1b2c3d4-0001-4000-8000-000000000001",
+      "applyUrl": "https://jobs.ashbyhq.com/exampleco/a1b2c3d4-0001-4000-8000-000000000001/application",
+      "descriptionHtml": "<p>Build our inference API in <b>Python</b> and FastAPI.</p>",
+      "descriptionPlain": "Build our inference API in Python and FastAPI.",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "compensation": {
+        "compensationTierSummary": "$90K - $120K",
+        "scrapeableCompensationSalarySummary": "$90K - $120K",
+        "compensationTiers": [],
+        "summaryComponents": [
+          {"compensationType": "Salary", "interval": "1 YEAR", "currencyCode": "USD", "minValue": 90000, "maxValue": 120000}
+        ]
+      }
+    },
+    {
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "title": "Data Engineer",
+      "department": "Data",
+      "team": null,
+      "employmentType": "FullTime",
+      "location": "Remote (Europe)",
+      "publishedAt": "2026-11-11T10:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": null,
+      "jobUrl": "https://jobs.ashbyhq.com/exampleco/a1b2c3d4-0002-4000-8000-000000000002",
+      "descriptionHtml": "<p>dbt, Airflow and BigQuery.</p>"
+    },
+    {
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "title": "Internal Python Contractor",
+      "location": "Remote",
+      "isListed": false,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/exampleco/a1b2c3d4-0003-4000-8000-000000000003",
+      "descriptionHtml": "<p>Python, unlisted.</p>"
+    },
+    {
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "title": "Malformed Python posting",
+      "isListed": true
+    }
+  ]
+}
