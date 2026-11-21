@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.enums import MatchBucket
-from app.db.models import Application, Match, Vacancy, VacancySource
+from app.db.models import Application, CandidateProfile, Match, Vacancy, VacancySource
 from app.db.repositories.source_state import SourceStateRepository
 from app.db.seed_rows import seed_only
 from app.documents import service as documents
@@ -185,7 +185,11 @@ async def _one(
 ) -> Reaction:
     reaction = Reaction(vacancy_id=item.vacancy_id)
     letter_text: str | None = None
-    cv: tuple[str, bytes] | None = None
+    cv: tuple[str, bytes] | None = (
+        await original_cv(session, item.profile_id)
+        if settings.worker_attach_cv == "original"
+        else None
+    )
     if budget.can_write:
         before = usage_ledger.ledger.invoiced_usd
         profile = await letters_store.load_profile_facts(session, item.profile_id)
@@ -193,14 +197,15 @@ async def _one(
             await letters.write_letter(session, item.vacancy_id, profile)
             letter_text = await _letter(session, item.vacancy_id)
             reaction.letter = letter_text is not None
-            written = await documents.write_cv(session, item.vacancy_id, profile)
-            if written.document is not None:
-                cv = (written.document.filename, written.document.content)
-                reaction.cv = True
+            if settings.worker_attach_cv == "tailored":
+                written = await documents.write_cv(session, item.vacancy_id, profile)
+                if written.document is not None:
+                    cv = (written.document.filename, written.document.content)
             budget.documents += 1
         budget.usd += max(0.0, usage_ledger.ledger.invoiced_usd - before)
         await session.commit()
 
+    reaction.cv = cv is not None
     reaction.action = await _act(session, item, facts, letter_text, cv, sender=sender)
     margin = f", отрыв {item.margin:.0f}" if item.margin is not None else ""
     company = f" — {facts['company']}" if facts.get("company") else ""
@@ -217,7 +222,12 @@ async def _one(
         lines += ["", "Письмо:", letter_text]
     reaction.notified = await notify.send_text("\n".join(lines))
     if cv is not None:
-        await notify.send_document(cv[0], cv[1], caption=f"Резюме под «{facts['title']}»")
+        caption = (
+            f"Ваше резюме «{item.slug}» для «{facts['title']}»"
+            if settings.worker_attach_cv == "original"
+            else f"Резюме под «{facts['title']}»"
+        )
+        await notify.send_document(cv[0], cv[1], caption=caption)
     return reaction
 
 
@@ -249,7 +259,7 @@ async def _act(
             if not decision.allowed:
                 reason = decision.reason
             elif cv is None:
-                reason = "резюме под вакансию не собралось"
+                reason = "нет файла резюме (загрузите его заново через «Заменить файл»)"
             else:
                 reason = "нет письма или сессии"
             contact = facts.get("contact") or "контакт в посте"
@@ -263,6 +273,20 @@ async def _act(
             session, sender, decision=decision, vacancy_key=str(item.vacancy_id), text=text, file=cv
         )
     return "Откликнитесь по ссылке: приложите резюме из файла ниже и вставьте письмо."
+
+
+async def original_cv(session: AsyncSession, profile_id: UUID) -> tuple[str, bytes] | None:
+    """The owner's own uploaded file for this profile, if it was kept (0019)."""
+    row = (
+        await session.execute(
+            select(CandidateProfile.resume_filename, CandidateProfile.resume_file).where(
+                CandidateProfile.id == profile_id
+            )
+        )
+    ).first()
+    if row is None or not row.resume_file:
+        return None
+    return (row.resume_filename or "resume.pdf", bytes(row.resume_file))
 
 
 async def _letter(session: AsyncSession, vacancy_id: UUID) -> str | None:

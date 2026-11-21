@@ -268,6 +268,7 @@ class ProfileRepository:
         track: str | None = None,
         priority: int | None = None,
         hh_resume_id: str | None = None,
+        content: bytes | None = None,
     ) -> CandidateProfile:
         """Reserve a profile row before parsing starts.
 
@@ -282,6 +283,7 @@ class ProfileRepository:
             resume_filename=filename,
             resume_size_bytes=size_bytes,
             resume_format=source_format,
+            resume_file=content,
             # Stored now because the staged file is deleted when parsing ends.
             ats_report=ats_report.model_dump(mode="json") if ats_report else None,
             is_active=False,

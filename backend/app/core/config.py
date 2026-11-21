@@ -383,6 +383,10 @@ class Settings(BaseSettings):
     #: vacancy names — from the owner's own account — with the letter and the
     #: CV, within the limits below. The owner accepted the risk that Telegram
     #: restricts an account that messages strangers.
+    #: Which CV the worker attaches: the owner's own uploaded file for the
+    #: winning track ("original"), or one generated for the vacancy
+    #: ("tailored"). Original until the generated one is as good as the owner's.
+    worker_attach_cv: Literal["original", "tailored"] = "original"
     telegram_outreach_enabled: bool = False
     telegram_outreach_max_per_day: Annotated[int, Field(ge=0, le=50)] = 10
 

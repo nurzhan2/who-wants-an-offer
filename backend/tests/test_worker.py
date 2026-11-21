@@ -208,6 +208,7 @@ def writers(monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession) -> list[U
 
     monkeypatch.setattr(react.letters, "write_letter", letter)
     monkeypatch.setattr(react.documents, "write_cv", cv)
+    monkeypatch.setattr(settings, "worker_attach_cv", "tailored")
     return written
 
 
@@ -522,6 +523,7 @@ async def test_no_cv_means_no_message_to_the_recruiter(
 
     monkeypatch.setattr(react.letters, "write_letter", letter)
     monkeypatch.setattr(react.documents, "write_cv", cv)
+    monkeypatch.setattr(settings, "worker_attach_cv", "tailored")
     backend = await profiles.create(make_profile(slug="backend", priority=0))
     tg = await _posting(
         vacancies,
@@ -540,4 +542,56 @@ async def test_no_cv_means_no_message_to_the_recruiter(
     await react.react(db_session, [tg], sender=sender)
 
     assert sender.sent == []
-    assert "резюме под вакансию не собралось" in next(e[1] for e in chat if e[0] == "text")
+    assert "нет файла резюме" in next(e[1] for e in chat if e[0] == "text")
+
+
+@pytest.mark.db
+async def test_the_owner_s_own_file_for_the_winning_track_is_attached(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    chat: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Until a generated CV is as good as the owner's, the owner's goes."""
+    from sqlalchemy import update
+
+    from app.db.models import CandidateProfile
+
+    monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
+    monkeypatch.setattr(settings, "worker_attach_cv", "original")
+
+    async def letter(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
+        session.add(Application(id=uuid7(), vacancy_id=vacancy_id, cover_letter="Письмо."))
+        await session.flush()
+
+    async def never(*_: Any, **__: Any) -> Any:
+        raise AssertionError("no CV is generated in original mode")
+
+    monkeypatch.setattr(react.letters, "write_letter", letter)
+    monkeypatch.setattr(react.documents, "write_cv", never)
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    await db_session.execute(
+        update(CandidateProfile)
+        .where(CandidateProfile.id == backend.id)
+        .values(resume_file=b"%PDF-synthetic", resume_filename="backend.pdf")
+    )
+    tg = await _posting(
+        vacancies,
+        "own",
+        "telegram",
+        "synthetic_jobs/3",
+        {"_derived": {"apply_contact": "@synthetic_hr3"}},
+    )
+
+    async def scored(session: AsyncSession, **_: Any) -> None:
+        await matches.bulk_upsert([make_match(backend.id, tg, Decimal("90"))])
+
+    monkeypatch.setattr(react, "score_corpus", scored)
+    sender = FakeSender()
+
+    await react.react(db_session, [tg], sender=sender)
+
+    assert sender.sent[0][2] == ("backend.pdf", b"%PDF-synthetic")
+    assert [e[1] for e in chat if e[0] == "document"] == ["backend.pdf"]

@@ -160,6 +160,7 @@ async def accept_upload(
         track=target.track,
         priority=target.priority,
         hh_resume_id=target.hh_resume_id,
+        content=content,
     )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

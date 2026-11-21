@@ -29,6 +29,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     SmallInteger,
     String,
@@ -165,6 +166,9 @@ class CandidateProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     resume_filename: Mapped[str | None] = mapped_column(String(255))
     resume_size_bytes: Mapped[int | None] = mapped_column(Integer)
     resume_format: Mapped[str | None] = mapped_column(String(10))
+    #: The uploaded file itself, kept since 0019 so the worker can attach the
+    #: owner's own resume to a message. Deferred: no listing loads it.
+    resume_file: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
 
     skills: Mapped[list["ProfileSkill"]] = relationship(
         back_populates="profile",
