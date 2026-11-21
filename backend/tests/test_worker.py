@@ -216,93 +216,13 @@ async def _posting(
     vacancies: Any, seed: str, slug: str, external: str, raw: dict[str, Any]
 ) -> UUID:
     result = await vacancies.upsert_by_external_id(
-        make_vacancy(seed, title=f"Python {seed}"),
+        make_vacancy(seed, title=f"Python {seed}", published_at=datetime.now(UTC)),
         source_slug=slug,
         external_id=external,
         url=f"https://example.test/{slug}/{external}",
         raw=raw,
     )
     return result.vacancy_id
-
-
-@pytest.mark.db
-async def test_new_vacancies_get_documents_a_message_and_the_right_action(
-    db_session: AsyncSession,
-    profiles: Any,
-    vacancies: Any,
-    matches: Any,
-    chat: list[Any],
-    writers: list[UUID],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
-    backend = await profiles.create(make_profile(slug="backend", priority=0))
-    tg = await _posting(
-        vacancies,
-        "tg",
-        "telegram",
-        "synthetic_jobs/1",
-        {"_derived": {"apply_contact": "@synthetic_hr", "channel": "synthetic_jobs"}},
-    )
-    hh = await _posting(vacancies, "hh", "hh", "137000001", {})
-    low = await _posting(vacancies, "low", "remotive", "r-1", {})
-
-    async def scored(session: AsyncSession, **_: Any) -> None:
-        await matches.bulk_upsert(
-            [
-                make_match(backend.id, tg, Decimal("91")),
-                make_match(backend.id, hh, Decimal("85")),
-                make_match(backend.id, low, Decimal("40")),
-            ]
-        )
-
-    monkeypatch.setattr(react, "score_corpus", scored)
-    sender = FakeSender()
-
-    reactions = await react.react(db_session, [tg, hh, low], sender=sender)
-
-    assert [item.vacancy_id for item in reactions] == [tg, hh], "best first, the low one ignored"
-    assert writers == [tg, hh]
-    assert sender.sent and sender.sent[0][0] == "@synthetic_hr"
-    assert "Синтетическое письмо." in sender.sent[0][1]
-    assert sender.sent[0][2] == ("cv.docx", b"DOCX")
-    messages = [entry[1] for entry in chat if entry[0] == "text"]
-    assert "Оценка 91 · резюме «backend»" in messages[0]
-    assert "Отправлено @synthetic_hr" in messages[0]
-    assert "в очереди агента" in messages[1]
-    assert [entry[1] for entry in chat if entry[0] == "document"] == ["cv.docx", "cv.docx"]
-
-    # A second tick over the same vacancies does nothing again.
-    assert await react.react(db_session, [tg, hh], sender=sender) == []
-
-
-@pytest.mark.db
-async def test_a_spent_budget_still_tells_the_owner_but_writes_nothing(
-    db_session: AsyncSession,
-    profiles: Any,
-    vacancies: Any,
-    matches: Any,
-    chat: list[Any],
-    writers: list[UUID],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "worker_max_documents_per_day", 0)
-    backend = await profiles.create(make_profile(slug="backend"))
-    vacancy = await _posting(vacancies, "x", "remotive", "r-2", {})
-
-    async def scored(session: AsyncSession, **_: Any) -> None:
-        await matches.bulk_upsert([make_match(backend.id, vacancy, Decimal("90"))])
-
-    monkeypatch.setattr(react, "score_corpus", scored)
-
-    [reaction] = await react.react(db_session, [vacancy])
-
-    assert writers == []
-    assert reaction.notified and not reaction.letter
-    assert "дневной бюджет" in chat[0][1]
-
-
-# ── the worker ────────────────────────────────────────────────────────
 
 
 @pytest.mark.db
@@ -499,31 +419,174 @@ def test_a_letter_answers_the_posting_in_its_own_language() -> None:
     assert posting_language(VacancyFacts(vacancy_id=uuid7(), title="")) == "ru"
 
 
+@pytest.fixture
+def cards(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
+    """Every message the bot sends, with its buttons."""
+    sent: list[tuple[str, Any]] = []
+
+    async def text(message: str, *, buttons: Any = None, **_: Any) -> bool:
+        sent.append((message, buttons))
+        return True
+
+    async def document(name: str, content: bytes, **kwargs: Any) -> bool:
+        sent.append((f"file:{name}", kwargs.get("caption")))
+        return True
+
+    monkeypatch.setattr(notify, "send_text", text)
+    monkeypatch.setattr(notify, "send_document", document)
+    return sent
+
+
+async def _own_file(db_session: AsyncSession, profile_id: UUID, name: str) -> None:
+    from sqlalchemy import update
+
+    from app.db.models import CandidateProfile
+
+    await db_session.execute(
+        update(CandidateProfile)
+        .where(CandidateProfile.id == profile_id)
+        .values(resume_file=b"%PDF-synthetic", resume_filename=name)
+    )
+
+
+def _scoring(matches: Any, rows: list[tuple[UUID, UUID, str]]) -> Any:
+    async def scored(session: AsyncSession, **_: Any) -> None:
+        await matches.bulk_upsert([make_match(p, v, Decimal(s)) for p, v, s in rows])
+
+    return scored
+
+
 @pytest.mark.db
-async def test_no_cv_means_no_message_to_the_recruiter(
+async def test_a_match_arrives_as_a_short_card_with_buttons_and_nothing_is_written(
     db_session: AsyncSession,
     profiles: Any,
     vacancies: Any,
     matches: Any,
-    chat: list[Any],
+    cards: list[tuple[str, Any]],
+    writers: list[UUID],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """21 Nov: three days of matches, each with a letter pasted in, buried the chat."""
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    tg = await _posting(
+        vacancies,
+        "tg",
+        "telegram",
+        "synthetic_jobs/1",
+        {"_derived": {"apply_contact": "@synthetic_hr"}},
+    )
+    hh = await _posting(vacancies, "hh", "hh", "137000001", {})
+    low = await _posting(vacancies, "low", "remotive", "r-1", {})
+    monkeypatch.setattr(
+        react,
+        "score_corpus",
+        _scoring(
+            matches, [(backend.id, tg, "91"), (backend.id, hh, "85"), (backend.id, low, "40")]
+        ),
+    )
+    sender = FakeSender()
+
+    reactions = await react.react(db_session, [tg, hh, low], sender=sender)
+
+    assert [item.vacancy_id for item in reactions] == [tg, hh], "best first, the low one ignored"
+    assert writers == [], "no letter until a button asks for one"
+    assert sender.sent == [], "outreach is off until the owner turns it on"
+    first, second = cards
+    assert "⭐ 91 · backend · telegram" in first[0] and "@synthetic_hr" in first[0]
+    assert first[1] == [[("✉️ Письмо", f"L:{tg}"), ("📄 Резюме", f"C:{tg}")]]
+    assert ("➕ В очередь hh", f"Q:{hh}") in second[1][1]
+    assert await react.react(db_session, [tg, hh], sender=sender) == []
+
+
+@pytest.mark.db
+async def test_filters_drop_old_postings_switched_off_tracks_and_the_overflow(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    cards: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy import update
+
+    from app.db.models import Vacancy
+    from app.services import bot
+
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    llm = await profiles.create(make_profile(slug="llm", priority=1))
+    old = await _posting(vacancies, "old", "remotive", "r-old", {})
+    await db_session.execute(
+        update(Vacancy)
+        .where(Vacancy.id == old)
+        .values(published_at=datetime.now(UTC) - timedelta(days=3))
+    )
+    off = await _posting(vacancies, "off", "remotive", "r-off", {})
+    many = [await _posting(vacancies, f"m{i}", "remotive", f"r-m{i}", {}) for i in range(10)]
+    prefs = bot.Prefs(tracks_off=["llm"])
+    await bot.save_prefs(db_session, prefs)
+    rows = [(backend.id, old, "95"), (llm.id, off, "99")] + [(backend.id, v, "90") for v in many]
+    monkeypatch.setattr(react, "score_corpus", _scoring(matches, rows))
+
+    reactions = await react.react(db_session, [old, off, *many])
+
+    assert len(reactions) == react.MAX_CARDS_PER_PASS
+    assert old not in {r.vacancy_id for r in reactions} and off not in {
+        r.vacancy_id for r in reactions
+    }
+    assert "Ещё 2 подходящих" in cards[-1][0]
+
+
+@pytest.mark.db
+async def test_outreach_once_turned_on_sends_the_letter_and_the_owner_s_file(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    cards: list[tuple[str, Any]],
+    writers: list[UUID],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import bot
+
+    monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
+    monkeypatch.setattr(settings, "worker_attach_cv", "original")
+    await bot.save_prefs(db_session, bot.Prefs(outreach=True))
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    await _own_file(db_session, backend.id, "backend.pdf")
+    tg = await _posting(
+        vacancies,
+        "own",
+        "telegram",
+        "synthetic_jobs/3",
+        {"_derived": {"apply_contact": "@synthetic_hr3"}},
+    )
+    monkeypatch.setattr(react, "score_corpus", _scoring(matches, [(backend.id, tg, "90")]))
+    sender = FakeSender()
+
+    await react.react(db_session, [tg], sender=sender)
+
+    assert sender.sent[0][0] == "@synthetic_hr3"
+    assert "Синтетическое письмо." in sender.sent[0][1]
+    assert sender.sent[0][2] == ("backend.pdf", b"%PDF-synthetic")
+    assert "Автоотклик: Отправлено @synthetic_hr3" in cards[0][0]
+
+
+@pytest.mark.db
+async def test_no_file_means_no_message_to_the_recruiter(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    cards: list[tuple[str, Any]],
+    writers: list[UUID],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A contact is written to once: a letter without the CV would waste it."""
+    from app.services import bot
+
     monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
-
-    async def letter(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
-        session.add(Application(id=uuid7(), vacancy_id=vacancy_id, cover_letter="Письмо."))
-        await session.flush()
-
-    class Unwritable:
-        document = None
-
-    async def cv(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
-        return Unwritable()
-
-    monkeypatch.setattr(react.letters, "write_letter", letter)
-    monkeypatch.setattr(react.documents, "write_cv", cv)
-    monkeypatch.setattr(settings, "worker_attach_cv", "tailored")
+    monkeypatch.setattr(settings, "worker_attach_cv", "original")
+    await bot.save_prefs(db_session, bot.Prefs(outreach=True))
     backend = await profiles.create(make_profile(slug="backend", priority=0))
     tg = await _posting(
         vacancies,
@@ -532,66 +595,119 @@ async def test_no_cv_means_no_message_to_the_recruiter(
         "synthetic_jobs/2",
         {"_derived": {"apply_contact": "@synthetic_hr2"}},
     )
-
-    async def scored(session: AsyncSession, **_: Any) -> None:
-        await matches.bulk_upsert([make_match(backend.id, tg, Decimal("90"))])
-
-    monkeypatch.setattr(react, "score_corpus", scored)
+    monkeypatch.setattr(react, "score_corpus", _scoring(matches, [(backend.id, tg, "90")]))
     sender = FakeSender()
 
     await react.react(db_session, [tg], sender=sender)
 
     assert sender.sent == []
-    assert "нет файла резюме" in next(e[1] for e in chat if e[0] == "text")
+    assert "нет файла резюме" in cards[0][0]
 
 
 @pytest.mark.db
-async def test_the_owner_s_own_file_for_the_winning_track_is_attached(
+async def test_the_buttons_send_the_letter_the_file_and_queue_hh(
     db_session: AsyncSession,
     profiles: Any,
     vacancies: Any,
     matches: Any,
-    chat: list[Any],
+    cards: list[tuple[str, Any]],
+    writers: list[UUID],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Until a generated CV is as good as the owner's, the owner's goes."""
-    from sqlalchemy import update
-
-    from app.db.models import CandidateProfile
-
-    monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
     monkeypatch.setattr(settings, "worker_attach_cv", "original")
-
-    async def letter(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
-        session.add(Application(id=uuid7(), vacancy_id=vacancy_id, cover_letter="Письмо."))
-        await session.flush()
-
-    async def never(*_: Any, **__: Any) -> Any:
-        raise AssertionError("no CV is generated in original mode")
-
-    monkeypatch.setattr(react.letters, "write_letter", letter)
-    monkeypatch.setattr(react.documents, "write_cv", never)
     backend = await profiles.create(make_profile(slug="backend", priority=0))
-    await db_session.execute(
-        update(CandidateProfile)
-        .where(CandidateProfile.id == backend.id)
-        .values(resume_file=b"%PDF-synthetic", resume_filename="backend.pdf")
+    await _own_file(db_session, backend.id, "backend.pdf")
+    hh = await _posting(vacancies, "hhq", "hh", "137000009", {})
+    monkeypatch.setattr(react, "score_corpus", _scoring(matches, [(backend.id, hh, "90")]))
+    await react.react(db_session, [hh])
+    cards.clear()
+
+    assert await react.on_button(db_session, f"L:{hh}") == "Письмо отправлено"
+    assert "Синтетическое письмо." in cards[-1][0]
+    assert await react.on_button(db_session, f"C:{hh}") == "Резюме отправлено"
+    assert cards[-1][0] == "file:backend.pdf"
+    assert await react.on_button(db_session, f"Q:{hh}") == "В очереди hh"
+    assert writers == [hh], "the letter is written once and reused"
+    assert await react.on_button(db_session, "L:not-a-uuid") == ""
+
+
+@pytest.mark.db
+async def test_a_spent_budget_writes_no_letter_and_says_so(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    cards: list[tuple[str, Any]],
+    writers: list[UUID],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "worker_max_documents_per_day", 0)
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    v = await _posting(vacancies, "budget", "remotive", "r-budget", {})
+    monkeypatch.setattr(react, "score_corpus", _scoring(matches, [(backend.id, v, "90")]))
+    await react.react(db_session, [v])
+
+    toast = await react.on_button(db_session, f"L:{v}")
+
+    assert "бюджет" in toast and writers == []
+
+
+@pytest.mark.db
+async def test_the_bot_obeys_only_its_owner_and_saves_filters(
+    db_session: AsyncSession,
+    profiles: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import bot
+
+    monkeypatch.setattr(settings, "telegram_chat_id", "1001")
+    edits: list[Any] = []
+    toasts: list[str] = []
+
+    async def edit(message_id: int, text: str, **kwargs: Any) -> bool:
+        edits.append((message_id, text, kwargs.get("buttons")))
+        return True
+
+    async def answer(callback_id: str, text: str = "") -> bool:
+        toasts.append(text)
+        return True
+
+    monkeypatch.setattr(notify, "edit_text", edit)
+    monkeypatch.setattr(notify, "answer_callback", answer)
+    await profiles.create(make_profile(slug="backend", priority=0))
+
+    def tap(chat_id: str, data: str) -> dict[str, Any]:
+        return {
+            "callback_query": {
+                "id": "q",
+                "data": data,
+                "message": {"message_id": 7, "chat": {"id": chat_id}},
+            }
+        }
+
+    await bot.handle(db_session, tap("666", "P"))
+    assert edits == [] and not (await bot.load_prefs(db_session)).paused
+
+    await bot.handle(db_session, tap("1001", "T:backend"))
+    await bot.handle(db_session, tap("1001", "A:72"))
+    await bot.handle(db_session, tap("1001", "O"))
+    prefs = await bot.load_prefs(db_session)
+    assert prefs.tracks_off == ["backend"] and prefs.max_age_hours == 72 and prefs.outreach
+    assert "⬜ backend" in str(edits[-1][2]) and toasts[-1] == "Сохранено"
+
+
+@pytest.mark.unit
+def test_a_posting_s_age_decides_whether_it_is_announced() -> None:
+    from app.services import bot
+
+    prefs = bot.Prefs(max_age_hours=24)
+    fresh = datetime.now(UTC) - timedelta(hours=3)
+    stale = datetime.now(UTC) - timedelta(days=2)
+    assert bot.why_not(prefs, slug="b", score=Decimal(90), published=fresh) is None
+    assert bot.why_not(prefs, slug="b", score=Decimal(90), published=stale) == "too_old"
+    assert bot.why_not(prefs, slug="b", score=Decimal(50), published=fresh) == "below_floor"
+    assert (
+        bot.why_not(bot.Prefs(paused=True), slug="b", score=Decimal(90), published=fresh)
+        == "paused"
     )
-    tg = await _posting(
-        vacancies,
-        "own",
-        "telegram",
-        "synthetic_jobs/3",
-        {"_derived": {"apply_contact": "@synthetic_hr3"}},
-    )
-
-    async def scored(session: AsyncSession, **_: Any) -> None:
-        await matches.bulk_upsert([make_match(backend.id, tg, Decimal("90"))])
-
-    monkeypatch.setattr(react, "score_corpus", scored)
-    sender = FakeSender()
-
-    await react.react(db_session, [tg], sender=sender)
-
-    assert sender.sent[0][2] == ("backend.pdf", b"%PDF-synthetic")
-    assert [e[1] for e in chat if e[0] == "document"] == ["backend.pdf"]
+    assert bot.age_label(fresh) == "3 ч назад"

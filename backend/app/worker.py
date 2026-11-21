@@ -35,7 +35,7 @@ from app.db.models import Vacancy
 from app.db.repositories.source_state import SourceStateRepository
 from app.db.session import session_factory
 from app.pipeline.runner import run_pipeline
-from app.services import daily, react
+from app.services import bot, daily, notify, react
 from app.services.outreach import Sender
 from app.sources.registry import get_enabled_sources
 
@@ -107,6 +107,20 @@ async def hh_loop(sender: Sender | None) -> None:
         await asyncio.sleep(HH_IDLE_SECONDS)
 
 
+async def bot_loop(sender: Sender | None) -> None:
+    """Long-poll the owner's bot: /filters and the buttons on each card."""
+    while True:
+        if not notify.configured():
+            await asyncio.sleep(60)
+            continue
+        try:
+            async with session_factory() as session:
+                await bot.poll_once(session, sender=sender)
+        except Exception as exc:  # the bot must outlive a bad update or a blip
+            logger.warning("worker.bot_failed", error=type(exc).__name__)
+            await asyncio.sleep(5)
+
+
 async def maybe_summary(now: datetime | None = None) -> bool:
     """Send the morning summary once a day, after ``SUMMARY_AT_UTC``."""
     moment = now or datetime.now(UTC)
@@ -150,6 +164,7 @@ async def main() -> None:
     tasks = [
         asyncio.create_task(fast_loop(sender), name="worker-fast"),
         asyncio.create_task(hh_loop(sender), name="worker-hh"),
+        asyncio.create_task(bot_loop(sender), name="worker-bot"),
     ]
     try:
         await asyncio.gather(*tasks)

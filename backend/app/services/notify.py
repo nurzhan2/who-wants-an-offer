@@ -7,7 +7,7 @@ logged; a failure is logged by status code only, and never raised — a missed
 notification must not stop the worker that found the vacancy.
 """
 
-from typing import Final
+from typing import Any, Final
 
 import httpx
 
@@ -37,19 +37,87 @@ def _cut(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-async def send_text(text: str, *, client: httpx.AsyncClient | None = None) -> bool:
+#: One row of inline buttons: (label, callback data). Telegram allows 64 bytes
+#: of callback data, which a prefix and a UUID fit in.
+Buttons = list[list[tuple[str, str]]]
+
+
+def keyboard(buttons: Buttons) -> dict[str, Any]:
+    """Inline buttons as the Bot API wants them."""
+    return {
+        "inline_keyboard": [
+            [{"text": label, "callback_data": data} for label, data in row] for row in buttons
+        ]
+    }
+
+
+async def send_text(
+    text: str,
+    *,
+    buttons: Buttons | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> bool:
     """One message to the owner's chat. False when not set up or refused."""
     if not configured():
         return False
+    payload: dict[str, object] = {
+        "chat_id": settings.telegram_chat_id,
+        "text": _cut(text, MESSAGE_LIMIT),
+        "disable_web_page_preview": True,
+    }
+    if buttons:
+        payload["reply_markup"] = keyboard(buttons)
+    return await _post("sendMessage", client=client, json=payload)
+
+
+async def edit_text(message_id: int, text: str, *, buttons: Buttons | None = None) -> bool:
+    """Replace a message the bot sent, e.g. the filter menu after a tap."""
+    if not configured():
+        return False
+    payload: dict[str, object] = {
+        "chat_id": settings.telegram_chat_id,
+        "message_id": message_id,
+        "text": _cut(text, MESSAGE_LIMIT),
+        "disable_web_page_preview": True,
+    }
+    if buttons:
+        payload["reply_markup"] = keyboard(buttons)
+    return await _post("editMessageText", client=None, json=payload)
+
+
+async def answer_callback(callback_id: str, text: str = "") -> bool:
+    """Stop the spinner on a tapped button, optionally with a short toast."""
+    if not configured():
+        return False
     return await _post(
-        "sendMessage",
-        client=client,
-        json={
-            "chat_id": settings.telegram_chat_id,
-            "text": _cut(text, MESSAGE_LIMIT),
-            "disable_web_page_preview": True,
-        },
+        "answerCallbackQuery",
+        client=None,
+        json={"callback_query_id": callback_id, "text": _cut(text, 200)},
     )
+
+
+async def get_updates(offset: int, *, timeout: int = 25) -> list[dict[str, Any]]:
+    """Long-poll the bot's updates. Empty on any failure; never logs the URL."""
+    if not configured():
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=timeout + 10) as http:
+            response = await http.post(
+                _url("getUpdates"),
+                json={
+                    "offset": offset,
+                    "timeout": timeout,
+                    "allowed_updates": ["message", "callback_query"],
+                },
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("notify.updates_failed", error=type(exc).__name__)
+        return []
+    if response.status_code != httpx.codes.OK:
+        logger.warning("notify.updates_refused", status=response.status_code)
+        return []
+    result = response.json().get("result")
+    return result if isinstance(result, list) else []
 
 
 async def send_document(

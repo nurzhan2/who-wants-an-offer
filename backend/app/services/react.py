@@ -41,7 +41,7 @@ from app.llm import usage as usage_ledger
 from app.matching import profile_vectors
 from app.matching.best import best_profiles
 from app.matching.scorer import ProfileNotReadyError, score_corpus
-from app.services import notify, outreach
+from app.services import bot, notify, outreach
 from app.services.outreach import Sender
 
 logger = get_logger(__name__)
@@ -93,13 +93,18 @@ async def save_budget(session: AsyncSession, budget: Budget) -> None:
     )
 
 
+#: Cards one pass may send. A crawl that brings more announces the rest in one
+#: line: on 21 Nov three days of matches arrived at once and buried the chat.
+MAX_CARDS_PER_PASS = 8
+
+
 async def react(
     session: AsyncSession,
     vacancy_ids: Sequence[UUID],
     *,
     sender: Sender | None = None,
 ) -> list[Reaction]:
-    """Score these vacancies, then act on the ones worth acting on, best first."""
+    """Score these vacancies, then announce the ones the owner's filters let through."""
     if not vacancy_ids:
         return []
     # A profile uploaded on the server has no vectors until something computes
@@ -115,6 +120,7 @@ async def react(
         return []
     await session.commit()
     best = await best_profiles(session, vacancy_ids)
+    prefs = await bot.load_prefs(session)
     floor = Decimal(settings.agent_queue_min_score)
     candidates = sorted(
         (item for item in best.values() if item.score >= floor),
@@ -124,6 +130,7 @@ async def react(
     budget = await load_budget(session)
     states = SourceStateRepository(session)
     reactions: list[Reaction] = []
+    overflow = 0
     for item in candidates:
         key = f"reacted:{item.vacancy_id}"
         if await states.get(STATE_SLUG, key) is not None:
@@ -131,18 +138,38 @@ async def react(
         facts = await _facts(session, item.vacancy_id, item.profile_id)
         if facts is None:
             continue
-        reaction = await _one(session, item, facts, budget=budget, sender=sender)
-        await states.set(STATE_SLUG, key, {"at": datetime.now(UTC).isoformat()})
+        seen: dict[str, Any] = {
+            "at": datetime.now(UTC).isoformat(),
+            "profile_id": str(item.profile_id),
+            "slug": item.slug,
+        }
+        skipped = bot.why_not(
+            prefs, slug=item.slug, score=item.score, published=facts.get("published")
+        )
+        if skipped is None and len(reactions) >= MAX_CARDS_PER_PASS:
+            skipped = "overflow"
+            overflow += 1
+        if skipped is not None:
+            await states.set(STATE_SLUG, key, {**seen, "skipped": skipped})
+            await session.commit()
+            continue
+        reaction = await _one(session, item, facts, prefs=prefs, budget=budget, sender=sender)
+        await states.set(STATE_SLUG, key, seen)
         await save_budget(session, budget)
         await session.commit()
         reactions.append(reaction)
+    if overflow:
+        await notify.send_text(
+            f"Ещё {overflow} подходящих вакансий не показаны, чтобы не засорять чат. "
+            "Они на дашборде; сузить поток — /filters."
+        )
     return reactions
 
 
 async def _facts(
     session: AsyncSession, vacancy_id: UUID, profile_id: UUID
 ) -> dict[str, Any] | None:
-    """Title, company, source, link and the post's contact; None for a seed or a filtered row."""
+    """Title, company, source, link, date and contact; None for a seed or a filtered row."""
     bucket = await session.scalar(
         select(Match.bucket).where(Match.vacancy_id == vacancy_id, Match.profile_id == profile_id)
     )
@@ -172,7 +199,61 @@ async def _facts(
         "url": source.url,
         "contact": derived.get("apply_contact"),
         "channel": derived.get("channel"),
+        "published": vacancy.published_at or vacancy.first_seen_at,
+        "known_date": vacancy.published_at is not None,
     }
+
+
+async def _write_letter(
+    session: AsyncSession, vacancy_id: UUID, profile_id: UUID, budget: Budget
+) -> str | None:
+    """The letter for this vacancy, written now if there is none and the budget allows."""
+    existing = await _letter(session, vacancy_id)
+    if existing is not None or not budget.can_write:
+        return existing
+    profile = await letters_store.load_profile_facts(session, profile_id)
+    if profile is None:
+        return None
+    before = usage_ledger.ledger.invoiced_usd
+    await letters.write_letter(session, vacancy_id, profile)
+    budget.documents += 1
+    budget.usd += max(0.0, usage_ledger.ledger.invoiced_usd - before)
+    await session.commit()
+    return await _letter(session, vacancy_id)
+
+
+async def _cv_for(
+    session: AsyncSession, vacancy_id: UUID, profile_id: UUID
+) -> tuple[str, bytes] | None:
+    if settings.worker_attach_cv == "original":
+        return await original_cv(session, profile_id)
+    profile = await letters_store.load_profile_facts(session, profile_id)
+    if profile is None:
+        return None
+    written = await documents.write_cv(session, vacancy_id, profile)
+    await session.commit()
+    if written.document is None:
+        return None
+    return (written.document.filename, written.document.content)
+
+
+def _card(item: Any, facts: dict[str, Any], status: str) -> tuple[str, notify.Buttons]:
+    company = f" — {facts['company']}" if facts.get("company") else ""
+    when = bot.age_label(facts.get("published"))
+    if not facts.get("known_date"):
+        when = f"найдена {when}"
+    lines = [
+        f"{facts['title']}{company}",
+        f"⭐ {item.score:.0f} · {item.slug} · {facts['slug']} · {when}",
+        str(facts["url"]),
+    ]
+    if status:
+        lines += ["", status]
+    vid = str(item.vacancy_id)
+    buttons: notify.Buttons = [[("✉️ Письмо", f"L:{vid}"), ("📄 Резюме", f"C:{vid}")]]
+    if facts["slug"] == settings.agent_source_slug:
+        buttons.append([("➕ В очередь hh", f"Q:{vid}")])
+    return "\n".join(lines), buttons
 
 
 async def _one(
@@ -180,99 +261,101 @@ async def _one(
     item: Any,
     facts: dict[str, Any],
     *,
+    prefs: bot.Prefs,
     budget: Budget,
     sender: Sender | None,
 ) -> Reaction:
     reaction = Reaction(vacancy_id=item.vacancy_id)
-    letter_text: str | None = None
-    cv: tuple[str, bytes] | None = (
-        await original_cv(session, item.profile_id)
-        if settings.worker_attach_cv == "original"
-        else None
-    )
-    if budget.can_write:
-        before = usage_ledger.ledger.invoiced_usd
-        profile = await letters_store.load_profile_facts(session, item.profile_id)
-        if profile is not None:
-            await letters.write_letter(session, item.vacancy_id, profile)
-            letter_text = await _letter(session, item.vacancy_id)
-            reaction.letter = letter_text is not None
-            if settings.worker_attach_cv == "tailored":
-                written = await documents.write_cv(session, item.vacancy_id, profile)
-                if written.document is not None:
-                    cv = (written.document.filename, written.document.content)
-            budget.documents += 1
-        budget.usd += max(0.0, usage_ledger.ledger.invoiced_usd - before)
-        await session.commit()
-
-    reaction.cv = cv is not None
-    reaction.action = await _act(session, item, facts, letter_text, cv, sender=sender)
-    margin = f", отрыв {item.margin:.0f}" if item.margin is not None else ""
-    company = f" — {facts['company']}" if facts.get("company") else ""
-    lines = [
-        f"🆕 {facts['title']}{company}",
-        f"Оценка {item.score:.0f} · резюме «{item.slug}»{margin}",
-        f"{facts['slug']} · {facts['url']}",
-        "",
-        reaction.action,
-    ]
-    if not budget.can_write and letter_text is None:
-        lines.append("Письмо и резюме не написаны: дневной бюджет модели или лимит документов.")
-    if letter_text:
-        lines += ["", "Письмо:", letter_text]
-    reaction.notified = await notify.send_text("\n".join(lines))
-    if cv is not None:
-        caption = (
-            f"Ваше резюме «{item.slug}» для «{facts['title']}»"
-            if settings.worker_attach_cv == "original"
-            else f"Резюме под «{facts['title']}»"
-        )
-        await notify.send_document(cv[0], cv[1], caption=caption)
+    status = ""
+    if facts["slug"] == "telegram" and prefs.outreach:
+        status = await _outreach(session, item, facts, budget=budget, sender=sender)
+        reaction.letter = await _letter(session, item.vacancy_id) is not None
+    elif facts["slug"] == "telegram" and facts.get("contact"):
+        status = f"Рекрутер: {facts['contact']}"
+    reaction.action = status
+    text, buttons = _card(item, facts, status)
+    reaction.notified = await notify.send_text(text, buttons=buttons)
     return reaction
 
 
-async def _act(
+async def _outreach(
     session: AsyncSession,
     item: Any,
     facts: dict[str, Any],
-    letter_text: str | None,
-    cv: tuple[str, bytes] | None,
     *,
+    budget: Budget,
     sender: Sender | None,
 ) -> str:
-    slug = facts["slug"]
-    if slug == settings.agent_source_slug:
+    """Write to the recruiter the post names, letter and CV both, or say why not."""
+    decision = await outreach.decide(
+        session,
+        contact=facts.get("contact"),
+        vacancy_key=str(item.vacancy_id),
+        score=float(item.score),
+    )
+    contact = facts.get("contact") or "контакт в посте"
+    if not decision.allowed:
+        return f"Автоотклик: нет ({decision.reason}). Напишите сами: {contact}"
+    if sender is None:
+        return f"Автоотклик: нет сессии Telegram. Напишите сами: {contact}"
+    cv = await _cv_for(session, item.vacancy_id, item.profile_id)
+    if cv is None:
+        # A message without the CV is half an application, and the contact can
+        # be written to only once: better the owner sends both by hand.
         return (
-            "hh: в очереди агента. Подтвердите на дашборде — агент на ноутбуке отправит "
-            f"отклик резюме «{item.slug}»."
+            "Автоотклик: нет файла резюме (загрузите его заново через «Заменить файл»). "
+            f"Напишите сами: {contact}"
         )
-    if slug == "telegram":
-        decision = await outreach.decide(
-            session,
-            contact=facts.get("contact"),
-            vacancy_key=str(item.vacancy_id),
-            score=float(item.score),
+    letter_text = await _write_letter(session, item.vacancy_id, item.profile_id, budget)
+    if not letter_text:
+        return f"Автоотклик: письмо не написано (бюджет). Напишите сами: {contact}"
+    channel = f" из канала @{facts['channel']}" if facts.get("channel") else ""
+    text = (
+        f"Здравствуйте! Пишу по вакансии «{facts['title']}»{channel}: "
+        f"{facts['url']}\n\n{letter_text}"
+    )
+    return "Автоотклик: " + await outreach.send(
+        session, sender, decision=decision, vacancy_key=str(item.vacancy_id), text=text, file=cv
+    )
+
+
+async def on_button(session: AsyncSession, data: str, *, sender: Sender | None = None) -> str:
+    """A card's button: send the letter, the CV, or queue an hh vacancy. Returns a toast."""
+    kind, _, raw_id = data.partition(":")
+    try:
+        vacancy_id = UUID(raw_id)
+    except ValueError:
+        return ""
+    seen = await SourceStateRepository(session).get(STATE_SLUG, f"reacted:{vacancy_id}") or {}
+    profile_raw = seen.get("profile_id")
+    if not profile_raw:
+        return "Не нашёл, с каким резюме совпала вакансия"
+    profile_id = UUID(str(profile_raw))
+    title = await session.scalar(select(Vacancy.title).where(Vacancy.id == vacancy_id)) or ""
+    budget = await load_budget(session)
+    if kind in {"L", "Q"}:
+        letter_text = await _write_letter(session, vacancy_id, profile_id, budget)
+        await save_budget(session, budget)
+        await session.commit()
+        if letter_text is None:
+            return "Письмо не написано: дневной бюджет модели исчерпан"
+        if kind == "Q":
+            await notify.send_text(
+                f"«{title}» в очереди hh. Подтвердите на дашборде во вкладке «Отклики» — "
+                "агент на ноутбуке отправит."
+            )
+            return "В очереди hh"
+        await notify.send_text(f"Письмо для «{title}»:\n\n{letter_text}")
+        return "Письмо отправлено"
+    if kind == "C":
+        cv = await _cv_for(session, vacancy_id, profile_id)
+        if cv is None:
+            return "Нет файла резюме: замените файл на дашборде"
+        await notify.send_document(
+            cv[0], cv[1], caption=f"Резюме «{seen.get('slug', '')}» для «{title}»"
         )
-        if not decision.allowed or sender is None or not letter_text or cv is None:
-            # A message without the CV is half an application, and the contact
-            # can be written to only once: better the owner sends both by hand.
-            if not decision.allowed:
-                reason = decision.reason
-            elif cv is None:
-                reason = "нет файла резюме (загрузите его заново через «Заменить файл»)"
-            else:
-                reason = "нет письма или сессии"
-            contact = facts.get("contact") or "контакт в посте"
-            return f"Telegram: напишите сами {contact} ({reason})."
-        channel = f" из канала @{facts['channel']}" if facts.get("channel") else ""
-        text = (
-            f"Здравствуйте! Пишу по вакансии «{facts['title']}»{channel}: "
-            f"{facts['url']}\n\n{letter_text}"
-        )
-        return "Telegram: " + await outreach.send(
-            session, sender, decision=decision, vacancy_key=str(item.vacancy_id), text=text, file=cv
-        )
-    return "Откликнитесь по ссылке: приложите резюме из файла ниже и вставьте письмо."
+        return "Резюме отправлено"
+    return ""
 
 
 async def original_cv(session: AsyncSession, profile_id: UUID) -> tuple[str, bytes] | None:
