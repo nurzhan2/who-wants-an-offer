@@ -194,6 +194,10 @@ class RunReport:
 MAX_CITY = 120
 
 
+#: How much of a failure's message a run record keeps.
+ERROR_DETAIL = 500
+
+
 def stated_city(posting: RawPosting) -> str | None:
     """The city a connector read off the posting, or None when it read none.
 
@@ -445,7 +449,13 @@ async def _run_source(source: BaseSource, plan: QueryPlan, sessions: Sessions) -
         )
     except Exception as exc:  # a broken source, not a broken run
         logger.exception("pipeline.source_failed", slug=source.slug)
-        outcome.errors.append({"stage": "crawl", "error": type(exc).__name__, "detail": str(exc)})
+        # Cut, because a database error quotes the whole failed statement with
+        # every parameter in it: measured 8 Oct 2026, one jsearch failure put
+        # some hundred kilobytes of vacancy text into pipeline_run.errors and
+        # into the sources screen. The class name and the start say what broke.
+        outcome.errors.append(
+            {"stage": "crawl", "error": type(exc).__name__, "detail": str(exc)[:ERROR_DETAIL]}
+        )
 
     outcome.duration_seconds = asyncio.get_running_loop().time() - started
     async with sessions() as session:

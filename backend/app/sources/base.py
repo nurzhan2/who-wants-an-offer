@@ -20,6 +20,7 @@ generators, so calling one returns an ``AsyncIterator`` directly; an
 caller to write ``async for posting in await source.search(query)``.
 """
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -27,7 +28,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import settings
 from app.db.enums import EmploymentType, RemoteType
@@ -233,6 +234,20 @@ class PostingState(BaseModel):
         return not (self.gone or self.archived or self.closed_for_applicants)
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _strip_surrogates(value: Any) -> Any:
+    """The same structure with every unpaired UTF-16 surrogate removed from its strings."""
+    if isinstance(value, str):
+        return _SURROGATE.sub("", value) if _SURROGATE.search(value) else value
+    if isinstance(value, dict):
+        return {key: _strip_surrogates(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return type(value)(_strip_surrogates(item) for item in value)
+    return value
+
+
 class RawPosting(BaseModel):
     """One posting exactly as a source returned it.
 
@@ -258,6 +273,20 @@ class RawPosting(BaseModel):
     #: until the connector's own model has validated it.
     raw: dict[str, Any] = Field(default_factory=dict)
     fetched_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_lone_surrogates(cls, data: Any) -> Any:
+        """Drop half an emoji before it reaches PostgreSQL.
+
+        A source that cuts text at a fixed length can cut between the two
+        halves of a surrogate pair, and a lone ``\\ud83c`` cannot be encoded as
+        UTF-8: asyncpg refuses the whole INSERT, and the batch around the one
+        posting is lost with it. Measured on jsearch, 8 Oct 2026 — the run
+        stored nothing. Stripped here, at the one model every connector's
+        output passes through, rather than in each connector.
+        """
+        return _strip_surrogates(data)
 
     @property
     def key(self) -> tuple[str, str]:

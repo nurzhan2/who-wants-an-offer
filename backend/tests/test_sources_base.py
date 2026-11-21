@@ -503,3 +503,21 @@ async def test_search_is_iterated_directly_rather_than_awaited() -> None:
     # And the spelling every connector's caller actually uses.
     async for item in source.search(SearchQuery()):
         assert item.source_slug == "fake"
+
+
+def test_half_an_emoji_is_stripped_before_it_can_lose_a_batch() -> None:
+    """A lone surrogate cannot be encoded as UTF-8; asyncpg refused a whole
+    jsearch batch over one on 8 Oct 2026. The posting must arrive without it."""
+    broken = "Glovo is part of the Delivery Hero Group \ud83c"
+    posting = RawPosting(
+        source_slug="jsearch",
+        external_id="x",
+        url="https://example.test/x",
+        title="Backend \ud83c Engineer",
+        description=broken,
+        raw={"job": {"text": broken, "tags": ["ok", "\udf89"]}},
+    )
+    assert posting.title == "Backend  Engineer"
+    assert posting.description == "Glovo is part of the Delivery Hero Group "
+    assert posting.raw == {"job": {"text": posting.description, "tags": ["ok", ""]}}
+    posting.model_dump_json()  # encodes as UTF-8 without raising
