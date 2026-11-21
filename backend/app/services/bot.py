@@ -19,13 +19,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
+from sqlalchemy import func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.enums import MatchBucket
+from app.db.models import Match, Vacancy, VacancySource
 from app.db.repositories.profile import ProfileRepository
 from app.db.repositories.source_state import SourceStateRepository
+from app.db.seed_rows import seed_only
+from app.matching.best import best_profiles
 from app.services import notify
 from app.services.notify import Buttons
 
@@ -36,6 +42,10 @@ PREFS_KEY = "prefs"
 OFFSET_KEY = "offset"
 AGES_HOURS = (24, 72, 168)
 SCORES = (70, 80, 90)
+#: Lines on one page of a track's list: ten, one button each, two rows of five.
+PAGE_SIZE = 10
+#: Longest list a track builds: past this the owner needs a stricter filter.
+LIST_LIMIT = 200
 
 
 @dataclass(slots=True)
@@ -145,7 +155,122 @@ async def menu(session: AsyncSession, prefs: Prefs) -> tuple[str, Buttons]:
             ("▶️ Включить" if prefs.paused else "⏸ Пауза", "P"),
         ]
     )
+    buttons.append([("📋 Списки по трекам", "M")])
     return "\n".join(lines), buttons
+
+
+@dataclass(frozen=True, slots=True)
+class Line:
+    """One vacancy in a track's list."""
+
+    vacancy_id: UUID
+    score: Decimal
+    title: str
+    company: str | None
+    source: str
+    published: datetime | None
+
+
+async def track_lines(session: AsyncSession, slug: str, prefs: Prefs) -> list[Line]:
+    """The vacancies this track's resume wins, best first, inside the filters."""
+    profile = await ProfileRepository(session).get_by_slug(slug)
+    if profile is None:
+        return []
+    since = datetime.now(UTC) - timedelta(hours=prefs.max_age_hours)
+    when = func.coalesce(Vacancy.published_at, Vacancy.first_seen_at)
+    rows = (
+        await session.execute(
+            select(Match.vacancy_id, Match.score, Vacancy.title, Vacancy.company, when)
+            .join(Vacancy, Vacancy.id == Match.vacancy_id)
+            .where(
+                Match.profile_id == profile.id,
+                Match.score >= prefs.floor,
+                Match.bucket != MatchBucket.FILTERED,
+                Vacancy.is_active.is_(True),
+                when >= since,
+                not_(seed_only(Vacancy.id)),
+            )
+            .order_by(Match.score.desc(), when.desc())
+            .limit(LIST_LIMIT)
+        )
+    ).all()
+    ids = [row[0] for row in rows]
+    winners = await best_profiles(session, ids)
+    sources: dict[UUID, str] = {}
+    for vacancy_id, source_slug in (
+        await session.execute(
+            select(VacancySource.vacancy_id, VacancySource.source_slug)
+            .where(VacancySource.vacancy_id.in_(ids))
+            .order_by(VacancySource.created_at)
+        )
+    ).all():
+        sources.setdefault(vacancy_id, source_slug)
+    return [
+        Line(row[0], Decimal(row[1]), row[2], row[3], sources.get(row[0], "?"), row[4])
+        for row in rows
+        if row[0] in winners and winners[row[0]].profile_id == profile.id
+    ]
+
+
+async def track_menu(session: AsyncSession, prefs: Prefs) -> tuple[str, Buttons]:
+    """Every active track with how many vacancies it wins inside the filters."""
+    slugs = [
+        profile.slug
+        for profile in await ProfileRepository(session).list_active()
+        if profile.slug not in prefs.tracks_off
+    ]
+    counts = {slug: len(await track_lines(session, slug, prefs)) for slug in slugs}
+    text = (
+        f"Вакансии по трекам (не старше {prefs.max_age_hours} ч, оценка от {prefs.floor}). "
+        "Нажмите трек — покажу список."
+    )
+    buttons: Buttons = [[(f"{slug} · {counts[slug]}", f"G:{slug}:0")] for slug in slugs]
+    buttons.append([("⚙️ Фильтры", "F")])
+    return text, buttons
+
+
+async def list_page(
+    session: AsyncSession, slug: str, page: int, prefs: Prefs
+) -> tuple[str, Buttons]:
+    """One page of a track's list: numbered lines, a button per line, paging."""
+    lines = await track_lines(session, slug, prefs)
+    pages = max(1, -(-len(lines) // PAGE_SIZE))
+    page = min(max(page, 0), pages - 1)
+    shown = lines[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+    if not shown:
+        return (f"{slug}: подходящих вакансий нет. Расширьте /filters.", [[("↩ Треки", "M")]])
+    text_lines = [f"{slug} — {len(lines)} вакансий, стр. {page + 1}/{pages}", ""]
+    for number, line in enumerate(shown, start=page * PAGE_SIZE + 1):
+        company = f" — {line.company}" if line.company else ""
+        text_lines.append(
+            f"{number}. ⭐{line.score:.0f} {line.title}{company} · {line.source} · "
+            f"{age_label(line.published)}"
+        )
+    numbers = [
+        (str(number), f"V:{line.vacancy_id}")
+        for number, line in enumerate(shown, start=page * PAGE_SIZE + 1)
+    ]
+    buttons: Buttons = [numbers[:5], numbers[5:]] if len(numbers) > 5 else [numbers]
+    paging: list[tuple[str, str]] = []
+    if page > 0:
+        paging.append(("◀", f"G:{slug}:{page - 1}"))
+    paging.append(("↩ Треки", "M"))
+    if page < pages - 1:
+        paging.append(("▶", f"G:{slug}:{page + 1}"))
+    buttons.append(paging)
+    return "\n".join(text_lines), buttons
+
+
+async def navigate(session: AsyncSession, data: str, prefs: Prefs) -> tuple[str, Buttons] | None:
+    """The screen a navigation button asks for, or None when it is not one."""
+    if data == "M":
+        return await track_menu(session, prefs)
+    if data == "F":
+        return await menu(session, prefs)
+    if data.startswith("G:"):
+        _, slug, page = data.split(":", 2) if data.count(":") >= 2 else (data, "", "0")
+        return await list_page(session, slug, int(page) if page.isdigit() else 0, prefs)
+    return None
 
 
 def apply_setting(prefs: Prefs, data: str) -> bool:
@@ -182,6 +307,11 @@ async def handle(session: AsyncSession, update: dict[str, Any], *, sender: Any =
             return
         data = str(callback.get("data") or "")
         prefs = await load_prefs(session)
+        screen = await navigate(session, data, prefs)
+        if screen is not None:
+            await notify.edit_text(int(message.get("message_id", 0)), screen[0], buttons=screen[1])
+            await notify.answer_callback(str(callback.get("id")))
+            return
         if apply_setting(prefs, data):
             await save_prefs(session, prefs)
             await session.commit()
@@ -204,7 +334,11 @@ async def handle(session: AsyncSession, update: dict[str, Any], *, sender: Any =
         prefs.paused = True
     elif command in {"/resume", "/go"}:
         prefs.paused = False
-    elif command not in {"/start", "/filters", "/settings", "/menu"}:
+    elif command in {"/start", "/list", "/jobs", "/menu"}:
+        text, buttons = await track_menu(session, prefs)
+        await notify.send_text(text, buttons=buttons)
+        return
+    elif command not in {"/filters", "/settings"}:
         return
     await save_prefs(session, prefs)
     await session.commit()

@@ -491,11 +491,18 @@ async def test_a_match_arrives_as_a_short_card_with_buttons_and_nothing_is_writt
     assert [item.vacancy_id for item in reactions] == [tg, hh], "best first, the low one ignored"
     assert writers == [], "no letter until a button asks for one"
     assert sender.sent == [], "outreach is off until the owner turns it on"
-    first, second = cards
-    assert "⭐ 91 · backend · telegram" in first[0] and "@synthetic_hr" in first[0]
-    assert first[1] == [[("✉️ Письмо", f"L:{tg}"), ("📄 Резюме", f"C:{tg}")]]
-    assert ("➕ В очередь hh", f"Q:{hh}") in second[1][1]
+    (digest,) = cards
+    assert digest[0] == "Новые вакансии: backend · 2"
+    assert digest[1] == [[("📋 backend", "G:backend:0")]]
     assert await react.react(db_session, [tg, hh], sender=sender) == []
+
+    # A number in the list opens the vacancy's card, with its own buttons.
+    cards.clear()
+    assert await react.on_button(db_session, f"V:{hh}") == ""
+    card, buttons = cards[0]
+    assert "⭐ 85 · backend · hh" in card
+    assert buttons[0] == [("✉️ Письмо", f"L:{hh}"), ("📄 Резюме", f"C:{hh}")]
+    assert ("➕ В очередь hh", f"Q:{hh}") in buttons[1]
 
 
 @pytest.mark.db
@@ -529,11 +536,18 @@ async def test_filters_drop_old_postings_switched_off_tracks_and_the_overflow(
 
     reactions = await react.react(db_session, [old, off, *many])
 
-    assert len(reactions) == react.MAX_CARDS_PER_PASS
-    assert old not in {r.vacancy_id for r in reactions} and off not in {
-        r.vacancy_id for r in reactions
-    }
-    assert "Ещё 2 подходящих" in cards[-1][0]
+    acted = {r.vacancy_id for r in reactions}
+    assert acted == set(many), "the stale posting and the switched-off track are not announced"
+    assert cards == [("Новые вакансии: backend · 10", [[("📋 backend", "G:backend:0")]])]
+
+    # The list behind the button: every vacancy the track wins, ten a page.
+    prefs_now = await bot.load_prefs(db_session)
+    text, buttons = await bot.list_page(db_session, "backend", 0, prefs_now)
+    assert text.startswith("backend — 10 вакансий, стр. 1/1")
+    assert [label for label, _ in buttons[0]] == ["1", "2", "3", "4", "5"]
+    assert buttons[-1] == [("↩ Треки", "M")]
+    _, menu_buttons = await bot.track_menu(db_session, prefs_now)
+    assert menu_buttons[0] == [("backend · 10", "G:backend:0")]
 
 
 @pytest.mark.db

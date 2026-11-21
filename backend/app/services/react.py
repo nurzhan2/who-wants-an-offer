@@ -93,11 +93,6 @@ async def save_budget(session: AsyncSession, budget: Budget) -> None:
     )
 
 
-#: Cards one pass may send. A crawl that brings more announces the rest in one
-#: line: on 21 Nov three days of matches arrived at once and buried the chat.
-MAX_CARDS_PER_PASS = 8
-
-
 async def react(
     session: AsyncSession,
     vacancy_ids: Sequence[UUID],
@@ -130,7 +125,8 @@ async def react(
     budget = await load_budget(session)
     states = SourceStateRepository(session)
     reactions: list[Reaction] = []
-    overflow = 0
+    by_track: dict[str, int] = {}
+    outreach_lines: list[str] = []
     for item in candidates:
         key = f"reacted:{item.vacancy_id}"
         if await states.get(STATE_SLUG, key) is not None:
@@ -146,23 +142,30 @@ async def react(
         skipped = bot.why_not(
             prefs, slug=item.slug, score=item.score, published=facts.get("published")
         )
-        if skipped is None and len(reactions) >= MAX_CARDS_PER_PASS:
-            skipped = "overflow"
-            overflow += 1
         if skipped is not None:
             await states.set(STATE_SLUG, key, {**seen, "skipped": skipped})
             await session.commit()
             continue
-        reaction = await _one(session, item, facts, prefs=prefs, budget=budget, sender=sender)
+        reaction = Reaction(vacancy_id=item.vacancy_id)
+        if facts["slug"] == "telegram" and prefs.outreach:
+            reaction.action = await _outreach(session, item, facts, budget=budget, sender=sender)
+            reaction.letter = await _letter(session, item.vacancy_id) is not None
+            outreach_lines.append(f"• {facts['title']}: {reaction.action}")
+        by_track[item.slug] = by_track.get(item.slug, 0) + 1
         await states.set(STATE_SLUG, key, seen)
         await save_budget(session, budget)
         await session.commit()
         reactions.append(reaction)
-    if overflow:
-        await notify.send_text(
-            f"Ещё {overflow} подходящих вакансий не показаны, чтобы не засорять чат. "
-            "Они на дашборде; сузить поток — /filters."
-        )
+    if by_track:
+        # One message a pass, not one per vacancy: on 21 Nov three days of
+        # matches arrived as separate messages and buried the chat. The lists
+        # behind the buttons show every vacancy, with its letter and its CV.
+        summary = ", ".join(f"{slug} · {count}" for slug, count in by_track.items())
+        text = "\n".join(["Новые вакансии: " + summary, *outreach_lines])
+        buttons: notify.Buttons = [[(f"📋 {slug}", f"G:{slug}:0")] for slug in by_track]
+        notified = await notify.send_text(text, buttons=buttons)
+        for reaction in reactions:
+            reaction.notified = notified
     return reactions
 
 
@@ -256,28 +259,6 @@ def _card(item: Any, facts: dict[str, Any], status: str) -> tuple[str, notify.Bu
     return "\n".join(lines), buttons
 
 
-async def _one(
-    session: AsyncSession,
-    item: Any,
-    facts: dict[str, Any],
-    *,
-    prefs: bot.Prefs,
-    budget: Budget,
-    sender: Sender | None,
-) -> Reaction:
-    reaction = Reaction(vacancy_id=item.vacancy_id)
-    status = ""
-    if facts["slug"] == "telegram" and prefs.outreach:
-        status = await _outreach(session, item, facts, budget=budget, sender=sender)
-        reaction.letter = await _letter(session, item.vacancy_id) is not None
-    elif facts["slug"] == "telegram" and facts.get("contact"):
-        status = f"Рекрутер: {facts['contact']}"
-    reaction.action = status
-    text, buttons = _card(item, facts, status)
-    reaction.notified = await notify.send_text(text, buttons=buttons)
-    return reaction
-
-
 async def _outreach(
     session: AsyncSession,
     item: Any,
@@ -326,12 +307,30 @@ async def on_button(session: AsyncSession, data: str, *, sender: Sender | None =
         vacancy_id = UUID(raw_id)
     except ValueError:
         return ""
-    seen = await SourceStateRepository(session).get(STATE_SLUG, f"reacted:{vacancy_id}") or {}
+    states = SourceStateRepository(session)
+    seen = await states.get(STATE_SLUG, f"reacted:{vacancy_id}") or {}
+    if not seen.get("profile_id"):
+        # A vacancy opened from a list may predate the worker: find its winner.
+        winner = (await best_profiles(session, [vacancy_id])).get(vacancy_id)
+        if winner is not None:
+            seen = {**seen, "profile_id": str(winner.profile_id), "slug": winner.slug}
+            await states.set(STATE_SLUG, f"reacted:{vacancy_id}", seen)
+            await session.commit()
     profile_raw = seen.get("profile_id")
     if not profile_raw:
         return "Не нашёл, с каким резюме совпала вакансия"
     profile_id = UUID(str(profile_raw))
     title = await session.scalar(select(Vacancy.title).where(Vacancy.id == vacancy_id)) or ""
+    if kind == "V":
+        winner = (await best_profiles(session, [vacancy_id])).get(vacancy_id)
+        facts = await _facts(session, vacancy_id, profile_id)
+        if winner is None or facts is None:
+            return "Вакансия больше не активна"
+        text, buttons = _card(
+            winner, facts, f"Рекрутер: {facts['contact']}" if facts.get("contact") else ""
+        )
+        await notify.send_text(text, buttons=buttons)
+        return ""
     budget = await load_budget(session)
     if kind in {"L", "Q"}:
         letter_text = await _write_letter(session, vacancy_id, profile_id, budget)
