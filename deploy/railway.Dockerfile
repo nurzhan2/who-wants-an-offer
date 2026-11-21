@@ -19,14 +19,13 @@ RUN npm run build
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+# No cache mounts: Railway accepts them only under its own service-id prefix.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1
 WORKDIR /src
 COPY pyproject.toml uv.lock README.md ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 COPY backend ./backend
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev \
+RUN uv sync --frozen --no-dev \
     && uv pip install --python /src/.venv/bin/python \
         --index-url https://download.pytorch.org/whl/cpu "torch>=2.4" \
     && uv pip install --python /src/.venv/bin/python "sentence-transformers>=6.0"
