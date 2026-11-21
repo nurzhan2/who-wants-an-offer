@@ -135,8 +135,12 @@ async def score_corpus(
     limit: int | None = None,
     unstated: UnstatedRequirement = DEFAULT_UNSTATED,
     formula: Formula = DEFAULT_FORMULA,
+    vacancy_ids: Sequence[UUID] | None = None,
 ) -> ScoringOutcome:
     """Score every vacancy against every active profile, or the named one.
+
+    ``vacancy_ids`` narrows the pass to those vacancies — the worker's case,
+    which scores what a tick has just brought in rather than the whole corpus.
 
     One row per (vacancy, profile) pair, which ``match``'s unique key has always
     allowed. Which profile a vacancy is then worked from is decided by reading
@@ -156,6 +160,7 @@ async def score_corpus(
             limit=limit,
             unstated=unstated,
             formula=formula,
+            vacancy_ids=vacancy_ids,
         )
     profiles = list(
         (
@@ -173,7 +178,14 @@ async def score_corpus(
     total = ScoringOutcome(unstated=unstated, formula=formula)
     for profile in profiles:
         total.merge(
-            await _score_one(session, profile, limit=limit, unstated=unstated, formula=formula)
+            await _score_one(
+                session,
+                profile,
+                limit=limit,
+                unstated=unstated,
+                formula=formula,
+                vacancy_ids=vacancy_ids,
+            )
         )
     return total
 
@@ -185,12 +197,13 @@ async def _score_one(
     limit: int | None,
     unstated: UnstatedRequirement,
     formula: Formula,
+    vacancy_ids: Sequence[UUID] | None = None,
 ) -> ScoringOutcome:
     """Score every vacancy against one profile and store the reasons."""
     facts = await _profile_facts(session, profile)
     outcome = ScoringOutcome(unstated=unstated, formula=formula, profiles=[profile.slug])
 
-    ids = await _vacancy_ids(session, limit=limit)
+    ids = await _vacancy_ids(session, limit=limit, only=vacancy_ids)
     canonicalizer = default_canonicalizer()
     pending: list[MatchCreate] = []
     for start in range(0, len(ids), CHUNK):
@@ -288,13 +301,17 @@ def _languages(stored: Any) -> dict[str, str]:
     return spoken
 
 
-async def _vacancy_ids(session: AsyncSession, *, limit: int | None) -> list[UUID]:
+async def _vacancy_ids(
+    session: AsyncSession, *, limit: int | None, only: Sequence[UUID] | None = None
+) -> list[UUID]:
     """Every active vacancy, newest first so a truncated run scores the freshest."""
     stmt: Select[Any] = (
         select(Vacancy.id)
         .where(Vacancy.is_active.is_(True), Vacancy.is_spam.is_(False))
         .order_by(Vacancy.first_seen_at.desc(), Vacancy.id)
     )
+    if only is not None:
+        stmt = stmt.where(Vacancy.id.in_(list(only)))
     if limit is not None:
         stmt = stmt.limit(limit)
     return [row[0] for row in (await session.execute(stmt)).all()]

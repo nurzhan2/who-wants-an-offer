@@ -99,6 +99,7 @@ from agent.queue import (
     QueueUnreachableError,
     Result,
     ResultsFile,
+    setting,
 )
 from agent.selectors import (
     LetterFieldUnknownError,
@@ -136,10 +137,13 @@ BATCH: Final[int] = 20
 #: Where the backend is when nobody says otherwise. Both processes belong to the
 #: same person on the same machine — that is the whole arrangement, and it is
 #: also why the endpoint is behind a shared local token rather than a login.
-#: A URL and not a secret, so it is a default and a flag rather than an
-#: environment variable; the token beside it is the opposite and never appears
-#: on a command line.
-DEFAULT_BACKEND: Final[str] = "http://localhost:8000"
+#: A URL and not a secret, so it is a default and a flag; the token beside it is
+#: the opposite and never appears on a command line.
+#:
+#: Since phase 22b the backend may run on a server while this agent stays on the
+#: owner's laptop, so ``AGENT_BACKEND_URL`` overrides the default — set once in
+#: the laptop's environment instead of typed on every run.
+DEFAULT_BACKEND: Final[str] = setting("AGENT_BACKEND_URL")[0] or "http://localhost:8000"
 
 #: Marks a journal reason that is hh's own sentence rather than this agent's.
 #:

@@ -216,7 +216,10 @@ class TelegramSource(BaseSource):
             for name, value in (
                 ("TELEGRAM_API_ID", settings.telegram_api_id),
                 ("TELEGRAM_API_HASH", settings.telegram_api_hash),
-                ("TELEGRAM_SESSION_PATH", settings.telegram_session_path),
+                (
+                    "TELEGRAM_SESSION_PATH",
+                    settings.telegram_session_path or settings.telegram_session_string,
+                ),
             )
             if not value
         )
@@ -230,7 +233,12 @@ class TelegramSource(BaseSource):
                 missing_credentials=missing,
             )
         path = settings.telegram_session_path
-        if self._reader is None and path is not None and not session_file(path).is_file():
+        if (
+            self._reader is None
+            and settings.telegram_session_string is None
+            and path is not None
+            and not session_file(path).is_file()
+        ):
             return Unavailable(
                 code=SourceUnavailable.MISSING_CREDENTIALS,
                 detail=(
@@ -244,13 +252,7 @@ class TelegramSource(BaseSource):
     def _make_reader(self) -> ChannelReader:
         if self._reader is not None:
             return self._reader
-        api_id, api_hash = settings.telegram_api_id, settings.telegram_api_hash
-        path = settings.telegram_session_path
-        if api_id is None or api_hash is None or path is None:  # pragma: no cover - unavailable()
-            raise ConfigurationError("Telegram не настроен")
-        return TelethonReader(
-            api_id=api_id, api_hash=api_hash.get_secret_value(), session_path=path
-        )
+        return TelethonReader.from_settings()
 
     def _model(self) -> LLMRouter | None:
         if not self._use_model:

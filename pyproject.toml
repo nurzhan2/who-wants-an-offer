@@ -104,6 +104,12 @@ known-first-party = ["app", "factories", "helpers"]
 "scripts/measure_description_budget.py" = ["RUF001", "RUF002", "RUF003"]
 "scripts/daily.py" = ["RUF001", "RUF002", "RUF003"]
 "backend/app/services/daily.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/services/react.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/services/outreach.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/services/notify.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/core/auth.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/app/worker.py" = ["RUF001", "RUF002", "RUF003"]
+"backend/tests/test_worker.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 "backend/tests/test_daily.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 # A transliteration table IS a homoglyph table: every one of its 33 keys is a
 # Cyrillic letter that ruff correctly points out looks like a Latin one. The

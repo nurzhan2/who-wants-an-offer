@@ -1,6 +1,7 @@
 """Log in to Telegram once, by hand, and leave a session file for the source.
 
-    uv run python -m app.sources.telegram_login
+    uv run python -m app.sources.telegram_login            # session file
+    uv run python -m app.sources.telegram_login --string   # also print it for a server
 
 Needs ``TELEGRAM_API_ID``, ``TELEGRAM_API_HASH`` (from https://my.telegram.org,
 «API development tools») and ``TELEGRAM_SESSION_PATH`` — a path OUTSIDE this
@@ -61,6 +62,14 @@ async def login() -> int:
         password=lambda: getpass.getpass("Пароль двухфакторной защиты (если есть): "),
     )
     me = await client.get_me()
+    if "--string" in sys.argv:
+        # For a server: the same login as a string, to paste into the platform's
+        # secret variable TELEGRAM_SESSION_STRING. Printed once, to this
+        # terminal only; never logged.
+        from telethon.sessions import StringSession
+
+        print("\nTELEGRAM_SESSION_STRING (вставьте в переменные Railway, никому не показывайте):")
+        print(StringSession.save(client.session))
     await client.disconnect()
     try:
         os.chmod(target, stat.S_IRUSR | stat.S_IWUSR)

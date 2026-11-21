@@ -556,7 +556,12 @@ def local_token() -> tuple[str, str]:
     package must not import (``agent/tests/test_isolation.py``). ``wwao`` has
     the same few lines for the same reason.
     """
-    from_environment = os.environ.get(TOKEN_VARIABLE, "").strip()
+    return setting(TOKEN_VARIABLE)
+
+
+def setting(name: str) -> tuple[str, str]:
+    """One variable from the environment, else from ``.env``, and where it was found."""
+    from_environment = os.environ.get(name, "").strip()
     if from_environment:
         return from_environment, "окружение"
     try:
@@ -565,7 +570,7 @@ def local_token() -> tuple[str, str]:
         return "", ""
     for raw in text.splitlines():
         key, _, value = raw.strip().removeprefix("export ").partition("=")
-        if key.strip() != TOKEN_VARIABLE:
+        if key.strip() != name:
             continue
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":

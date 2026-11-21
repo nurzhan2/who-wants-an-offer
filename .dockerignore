@@ -19,3 +19,6 @@ http_cache
 .env
 .env.*
 !.env.example
+.claude
+agent/probe
+agent/evidence/*.png

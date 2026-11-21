@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
 from app.api.v1.router import router as api_v1_router
+from app.core.auth import DashboardPasswordMiddleware
 from app.core.config import settings
 from app.core.exceptions import ConfigurationError, register_exception_handlers
 from app.core.logging import configure_logging, get_logger
@@ -143,13 +145,37 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
     app.add_middleware(RequestIDMiddleware)
+    # Added last, therefore outermost: a request without the password is turned
+    # away before anything else runs. A no-op when DASHBOARD_PASSWORD is unset.
+    app.add_middleware(DashboardPasswordMiddleware)
 
     register_exception_handlers(app)
 
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
+    _serve_dashboard(app)
     return app
+
+
+def _serve_dashboard(app: FastAPI) -> None:
+    """Serve the built dashboard from this process, when there is one.
+
+    On a server one service is simpler than two, and the dashboard already
+    calls the API by relative paths, so the same origin needs no CORS and no
+    second URL. Mounted after every router, at the root, so an API path always
+    wins. Its routes are hash routes (``#/profile``), so ``index.html`` is the
+    only page there is.
+    """
+    directory = settings.frontend_dist_dir
+    if directory is None:
+        return
+    if not (directory / "index.html").is_file():
+        raise ConfigurationError(
+            f"FRONTEND_DIST_DIR={directory} has no index.html — build the dashboard "
+            "(npm --prefix frontend run build) or unset the variable."
+        )
+    app.mount("/", StaticFiles(directory=directory, html=True), name="dashboard")
 
 
 app = create_app()

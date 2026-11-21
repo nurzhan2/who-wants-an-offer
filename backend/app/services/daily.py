@@ -29,7 +29,6 @@ import httpx
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.db.enums import MatchBucket, PipelineRunStatus
@@ -37,6 +36,7 @@ from app.db.models import CandidateProfile, Match, PipelineRun, SourceState, Vac
 from app.db.profile_order import best_profile_id
 from app.db.session import session_factory
 from app.services import agent_queue, autopilot
+from app.services import notify as owner_chat
 
 logger = get_logger(__name__)
 
@@ -48,7 +48,6 @@ TOP: Final[int] = 15
 #: posting at the top of the list is one the owner has seen, or one that is
 #: closed — measured on the owner's first run, 21 Nov 2026.
 TOP_MAX_AGE_DAYS: Final[int] = 21
-TELEGRAM_API: Final[str] = "https://api.telegram.org"
 
 
 @dataclass(slots=True)
@@ -213,28 +212,5 @@ def _first_error(errors: Any) -> str | None:
 
 
 async def notify(text: str, *, client: httpx.AsyncClient | None = None) -> bool:
-    """Send the summary to the owner's own chat through their bot. False if not set up.
-
-    The token is part of the URL Telegram's Bot API asks for, so the URL is never
-    logged; a failure is logged by status code only.
-    """
-    token, chat = settings.telegram_bot_token, settings.telegram_chat_id
-    if token is None or not chat:
-        return False
-    own = client is None
-    http = client or httpx.AsyncClient(timeout=settings.http_timeout)
-    try:
-        response = await http.post(
-            f"{TELEGRAM_API}/bot{token.get_secret_value()}/sendMessage",
-            json={"chat_id": chat, "text": text, "disable_web_page_preview": True},
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("daily.notify_failed", error=type(exc).__name__)
-        return False
-    finally:
-        if own:
-            await http.aclose()
-    if response.status_code != httpx.codes.OK:
-        logger.warning("daily.notify_refused", status=response.status_code)
-        return False
-    return True
+    """Send the summary to the owner's own chat through their bot. False if not set up."""
+    return await owner_chat.send_text(text, client=client)

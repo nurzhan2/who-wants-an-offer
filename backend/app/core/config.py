@@ -350,6 +350,39 @@ class Settings(BaseSettings):
     #: How far back the first run looks. Later runs continue from the last UID.
     email_alerts_since_days: Annotated[int, Field(ge=1, le=365)] = 14
 
+    # ── Server deployment (phase 22b) ─────────────────────────────────
+    #: Password for the dashboard and its API when this runs on a server. Unset
+    #: — the laptop case — means no password, exactly as before. Set, every
+    #: request except /health and the agent's token-guarded queue must carry it
+    #: (HTTP Basic, any user name): the dashboard holds the owner's CVs, contact
+    #: block and letters, and without this a public URL would show them to anyone.
+    dashboard_password: SecretStr | None = None
+    #: The built dashboard (``npm run build`` output) served by the API itself,
+    #: so a server needs one service rather than two. Unset: not served.
+    frontend_dist_dir: Path | None = None
+    #: A Telethon StringSession, for a server where a session file would not
+    #: survive a redeploy. Produced by ``telegram_login --string``. A secret:
+    #: whoever holds it reads Telegram as the owner.
+    telegram_session_string: SecretStr | None = None
+
+    # ── The worker: around the clock (phase 22b) ──────────────────────────
+    #: How often the worker asks the fast sources (everything but hh) for news.
+    worker_tick_seconds: Annotated[int, Field(ge=60, le=3600)] = 300
+    #: Ceiling on model spend per UTC day, across letters, CVs and parsing.
+    #: Above it no letter or CV is written until midnight; the owner is still
+    #: told about every vacancy.
+    llm_max_cost_per_day_usd: Annotated[float, Field(ge=0)] = 10.0
+    #: Letter + CV pairs the worker may write per UTC day.
+    worker_max_documents_per_day: Annotated[int, Field(ge=0, le=200)] = 30
+
+    # ── Telegram outreach (owner's explicit decision, 21 Nov 2026) ────────
+    #: Off unless set. When on, the worker writes to the contact a Telegram
+    #: vacancy names — from the owner's own account — with the letter and the
+    #: CV, within the limits below. The owner accepted the risk that Telegram
+    #: restricts an account that messages strangers.
+    telegram_outreach_enabled: bool = False
+    telegram_outreach_max_per_day: Annotated[int, Field(ge=0, le=50)] = 10
+
     # ── Notifications (Telegram bot) ──────────────────────────────────
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
