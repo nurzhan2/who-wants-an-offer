@@ -1,0 +1,798 @@
+[
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "не дотягиваю"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «не дотягиваю». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "не хватает опыта"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «не хватает опыта». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "небольшой опыт"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «небольшой опыт». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "к сожалению"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «к сожалению». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "не соответствую"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «не соответствую». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "прошу прощения"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «прошу прощения». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "извините за беспокойство"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «извините за беспокойство». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "дайте мне шанс"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «дайте мне шанс». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "хоть я и"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «хоть я и». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "пусть я и"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «пусть я и». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "только начинаю"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «только начинаю». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i lack"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «i lack». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "despite my limited"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «despite my limited». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "limited experience"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «limited experience». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i know i don't meet"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «i know i don't meet». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i may not be"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «i may not be». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "sorry to bother"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «sorry to bother». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i apologize"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «i apologize». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "although i only have"
+  },
+  "message": "Не оправдываться и не подсвечивать слабость первым: «although i only have». Отвечать фактами из опыта."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "стрессоустойчив"
+  },
+  "message": "Штамп «стрессоустойчив»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "стрессоустойчив"
+  },
+  "message": "Штамп «стрессоустойчив» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "коммуникабельн"
+  },
+  "message": "Штамп «коммуникабельн»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "коммуникабельн"
+  },
+  "message": "Штамп «коммуникабельн» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "целеустремл"
+  },
+  "message": "Штамп «целеустремл»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "целеустремл"
+  },
+  "message": "Штамп «целеустремл» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "трудолюбив"
+  },
+  "message": "Штамп «трудолюбив»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "трудолюбив"
+  },
+  "message": "Штамп «трудолюбив» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "быстро обучаюсь"
+  },
+  "message": "Штамп «быстро обучаюсь»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "быстро обучаюсь"
+  },
+  "message": "Штамп «быстро обучаюсь» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "быстро осваиваю"
+  },
+  "message": "Штамп «быстро осваиваю»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "быстро осваиваю"
+  },
+  "message": "Штамп «быстро осваиваю» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "командный игрок"
+  },
+  "message": "Штамп «командный игрок»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "командный игрок"
+  },
+  "message": "Штамп «командный игрок» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "нацелен на результат"
+  },
+  "message": "Штамп «нацелен на результат»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "нацелен на результат"
+  },
+  "message": "Штамп «нацелен на результат» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "уважаемый работодатель"
+  },
+  "message": "Штамп «уважаемый работодатель»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "уважаемый работодатель"
+  },
+  "message": "Штамп «уважаемый работодатель» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "синерги"
+  },
+  "message": "Штамп «синерги»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "синерги"
+  },
+  "message": "Штамп «синерги» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "team player"
+  },
+  "message": "Штамп «team player»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "team player"
+  },
+  "message": "Штамп «team player» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "hard-working"
+  },
+  "message": "Штамп «hard-working»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "hard-working"
+  },
+  "message": "Штамп «hard-working» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "hardworking"
+  },
+  "message": "Штамп «hardworking»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "hardworking"
+  },
+  "message": "Штамп «hardworking» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "fast learner"
+  },
+  "message": "Штамп «fast learner»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "fast learner"
+  },
+  "message": "Штамп «fast learner» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "quick learner"
+  },
+  "message": "Штамп «quick learner»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "quick learner"
+  },
+  "message": "Штамп «quick learner» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "passionate about"
+  },
+  "message": "Штамп «passionate about»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "passionate about"
+  },
+  "message": "Штамп «passionate about» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "proven track record"
+  },
+  "message": "Штамп «proven track record»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "proven track record"
+  },
+  "message": "Штамп «proven track record» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "results-driven"
+  },
+  "message": "Штамп «results-driven»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "results-driven"
+  },
+  "message": "Штамп «results-driven» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i am writing to"
+  },
+  "message": "Штамп «i am writing to»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i am writing to"
+  },
+  "message": "Штамп «i am writing to» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i believe i would be a great fit"
+  },
+  "message": "Штамп «i believe i would be a great fit»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "i believe i would be a great fit"
+  },
+  "message": "Штамп «i believe i would be a great fit» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "perfect fit"
+  },
+  "message": "Штамп «perfect fit»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "perfect fit"
+  },
+  "message": "Штамп «perfect fit» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "unique opportunity"
+  },
+  "message": "Штамп «unique opportunity»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "unique opportunity"
+  },
+  "message": "Штамп «unique opportunity» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "to whom it may concern"
+  },
+  "message": "Штамп «to whom it may concern»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "to whom it may concern"
+  },
+  "message": "Штамп «to whom it may concern» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "dear sir"
+  },
+  "message": "Штамп «dear sir»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "dear sir"
+  },
+  "message": "Штамп «dear sir» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "leverag"
+  },
+  "message": "Штамп «leverag»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "leverag"
+  },
+  "message": "Штамп «leverag» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "spearhead"
+  },
+  "message": "Штамп «spearhead»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "spearhead"
+  },
+  "message": "Штамп «spearhead» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "cutting-edge"
+  },
+  "message": "Штамп «cutting-edge»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "cutting-edge"
+  },
+  "message": "Штамп «cutting-edge» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "in today's fast-paced"
+  },
+  "message": "Штамп «in today's fast-paced»: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "in today's fast-paced"
+  },
+  "message": "Штамп «in today's fast-paced» в резюме: заменить конкретным фактом или убрать."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "responsible for"
+  },
+  "message": "Формулировка обязанностей «responsible for»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "duties included"
+  },
+  "message": "Формулировка обязанностей «duties included»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "в мои обязанности входило"
+  },
+  "message": "Формулировка обязанностей «в мои обязанности входило»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "отвечал за"
+  },
+  "message": "Формулировка обязанностей «отвечал за»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "участвовал в"
+  },
+  "message": "Формулировка обязанностей «участвовал в»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "занимался"
+  },
+  "message": "Формулировка обязанностей «занимался»: писать результат и действие («Разработал…», «Built…»)."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "дата рождения"
+  },
+  "message": "Личные данные «дата рождения» в резюме не нужны."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "семейное положение"
+  },
+  "message": "Личные данные «семейное положение» в резюме не нужны."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "date of birth"
+  },
+  "message": "Личные данные «date of birth» в резюме не нужны."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "forbidden_phrase",
+   "phrase": "marital status"
+  },
+  "message": "Личные данные «marital status» в резюме не нужны."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "hard",
+  "params": {
+   "kind": "length",
+   "unit": "characters",
+   "maximum": 1600
+  },
+  "message": "Письмо длиннее 1600 знаков: рекрутер читает первые два абзаца. Для Telegram цель 600–900."
+ },
+ {
+  "scope": "cover_letter",
+  "severity": "soft",
+  "params": {
+   "kind": "length",
+   "unit": "characters",
+   "minimum": 400
+  },
+  "message": "Письмо короче 400 знаков: не хватает конкретики по вакансии."
+ },
+ {
+  "scope": "cv",
+  "severity": "soft",
+  "params": {
+   "kind": "length",
+   "unit": "words",
+   "minimum": 300,
+   "maximum": 700
+  },
+  "message": "Резюме на одну страницу: 300–700 слов."
+ }
+]

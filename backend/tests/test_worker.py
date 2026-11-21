@@ -725,3 +725,16 @@ def test_a_posting_s_age_decides_whether_it_is_announced() -> None:
         == "paused"
     )
     assert bot.age_label(fresh) == "3 ч назад"
+
+
+@pytest.mark.db
+async def test_the_workshop_seed_is_valid_and_applied_once(db_session: AsyncSession) -> None:
+    from app.workshop import seed, store
+
+    assert await seed.apply_seed(db_session) is not None
+    assert await seed.apply_seed(db_session) is None, "never twice, so a deleted rule stays deleted"
+    assert len(await store.stored_rules(db_session)) == len(seed.rules())
+    letters = [r for r in seed.references() if r["kind"] == "cover_letter"]
+    assert letters and all(
+        "http" not in r["text"] and "github" not in r["text"].lower() for r in letters
+    )

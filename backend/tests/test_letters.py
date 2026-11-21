@@ -748,16 +748,16 @@ async def test_every_letter_that_comes_out_of_the_generator_passes_the_checks() 
 
 
 @pytest.mark.unit
-def test_the_fallback_answers_the_requirements_and_names_the_gap() -> None:
-    """Built from the database alone: no model, and nothing invented."""
+def test_the_fallback_answers_the_requirements_and_volunteers_no_gap() -> None:
+    """Built from the database alone: no model, nothing invented, no weakness offered."""
     context = build_context(vacancy_facts(), profile_facts())
 
     fallback = compose_fallback(context)
 
     assert "Python" in fallback.text
     assert "PostgreSQL" in fallback.text
-    assert "Kubernetes" in fallback.text
-    assert "не работал" in fallback.text
+    assert "Kubernetes" not in fallback.text, "a requirement not held is not named"
+    assert "не работал" not in fallback.text
     assert find_problems(fallback.text) == []
 
 

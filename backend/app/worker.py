@@ -38,6 +38,7 @@ from app.pipeline.runner import run_pipeline
 from app.services import bot, daily, notify, react
 from app.services.outreach import Sender
 from app.sources.registry import get_enabled_sources
+from app.workshop import seed as workshop_seed
 
 logger = get_logger(__name__)
 
@@ -160,6 +161,11 @@ async def main() -> None:
         outreach=sender is not None,
         budget_usd=settings.llm_max_cost_per_day_usd,
     )
+    try:
+        async with session_factory() as session:
+            await workshop_seed.apply_seed(session)
+    except Exception as exc:  # a seed that fails must not keep the worker down
+        logger.warning("worker.workshop_seed_failed", error=type(exc).__name__)
     await catch_up(sender=sender)
     tasks = [
         asyncio.create_task(fast_loop(sender), name="worker-fast"),

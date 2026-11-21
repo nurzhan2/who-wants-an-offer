@@ -586,12 +586,8 @@ def compose_fallback(context: LetterContext) -> FallbackLetter:
     elif context.profile.headline and is_safe(context.profile.headline):
         paragraphs.append(f"Моя специализация — {context.profile.headline}.")
 
-    missing = [name for name in overlap.missing if is_safe(name)]
-    if missing:
-        paragraphs.append(
-            f"С чем не работал: {_enumerate(missing)}. Пишу об этом сразу, "
-            "чтобы не тратить ваше время: опыта здесь у меня нет, разобраться готов."
-        )
+    # Gaps are not volunteered (21 Nov 2026, the workshop research): the
+    # recruiter reads the CV, and a letter is the case for an interview.
 
     other = [name for name in overlap.other[:3] if is_safe(name)]
     if other:

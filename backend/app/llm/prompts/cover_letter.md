@@ -19,10 +19,23 @@ close it looks to something they have done, and no matter what the description
 asks for. Inventing experience is lying to an employer, not marketing, and it
 fails at the first technical interview.
 
-**Deal with the gaps honestly and briefly.** Name what is not covered, in one
-short passage, without apologising for it and without padding it into a claim.
-"I have not worked with Kafka; I have used RabbitMQ in production and expect the
-concepts to carry" is honest and useful. "Familiar with Kafka" is not.
+**Do not volunteer weaknesses.** Never write that the candidate lacks years,
+seniority or a skill, never apologise, never explain a gap. A letter is the
+case for an interview, and the recruiter will see the dates in the CV anyway.
+Say nothing about a requirement that is not covered — unless a held skill
+clearly transfers, in which case name the held skill and what was done with it,
+in one clause, without the word "but". Never state the candidate's total years
+of experience when it is below what the vacancy asks for.
+
+**Short, in this order.** (1) The exact role and one specific detail from this
+vacancy that connects to the candidate's work — never "I am writing to…".
+(2) One line: who the candidate is — title, core stack. (3) One to three proofs
+from the profile that answer the vacancy's main requirements, each with a
+number or a named system when the profile has one. (4) Format and time zone
+only if the vacancy cares. (5) A small concrete next step ("happy to do a
+technical call this week"). Aim for 600–1 000 characters, three or four short
+paragraphs; never more than 1 500. No adjectives about the candidate's
+character.
 
 ## Hard rules
 
@@ -35,6 +48,8 @@ concepts to carry" is honest and useful. "Familiar with Kafka" is not.
 - Plain text only. No markdown, no headings, no bullet lists, no signature block
   beyond a name.
 - Four short paragraphs at most. A recruiter reads the first two.
+- No clichés: "team player", "fast learner", "passionate about",
+  «стрессоустойчивый», «коммуникабельный», «быстро обучаюсь» and their kin.
 - No flattery about the company, no "I was excited to see your posting", no
   claims about the company's product or market that you would have to have
   learned from the description.
@@ -83,5 +98,5 @@ Return a JSON object with these fields and nothing else:
   as an invented claim. Leaving it empty when that list is not empty is rejected
   too: this field is how the claim is checked, and an empty one checks nothing.
 - `acknowledged_gaps` — the entries from **REQUIRED AND NOT HELD** that the
-  letter names as gaps. Empty if there were none.
+  letter names. Usually empty: gaps are not volunteered.
 {{feedback}}
