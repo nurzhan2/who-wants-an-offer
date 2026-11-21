@@ -127,6 +127,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # An empty variable is an unset one: a Railway reference to a secret the
+        # owner never entered renders as "", and "" is not a key.
+        env_ignore_empty=True,
     )
 
     # ── Core ──────────────────────────────────────────────────────────
