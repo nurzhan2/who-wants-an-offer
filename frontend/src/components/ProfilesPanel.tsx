@@ -240,11 +240,14 @@ function ProfileRow({
   onReplace: (file: File) => void
 }) {
   const file = useRef<HTMLInputElement>(null)
+  const [slug, setSlug] = useState(profile.slug ?? '')
   const [hhId, setHhId] = useState(profile.hh_resume_id ?? '')
   const [track, setTrack] = useState(profile.track ?? '')
   const [priority, setPriority] = useState(String(profile.priority))
   const hhValid = hhId === '' || HH_ID.test(hhId)
+  const slugValid = SLUG.test(slug)
   const dirty =
+    slug !== (profile.slug ?? '') ||
     hhId !== (profile.hh_resume_id ?? '') ||
     track !== (profile.track ?? '') ||
     priority !== String(profile.priority)
@@ -274,6 +277,16 @@ function ProfileRow({
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-small">
+        <input
+          className="w-36 border border-hairline px-2 py-1"
+          aria-label={`Метка ${profile.slug ?? ''}`}
+          aria-invalid={!slugValid}
+          placeholder="метка"
+          value={slug}
+          onChange={(event) => {
+            setSlug(event.target.value.trim().toLowerCase())
+          }}
+        />
         <input
           className="border border-hairline px-2 py-1"
           aria-label={`Трек ${profile.slug ?? ''}`}
@@ -305,9 +318,10 @@ function ProfileRow({
         <button
           type="button"
           className="underline disabled:opacity-50"
-          disabled={!dirty || !hhValid}
+          disabled={!dirty || !hhValid || !slugValid}
           onClick={() => {
             onSave({
+              ...(slug !== (profile.slug ?? '') ? { slug } : {}),
               hh_resume_id: hhId === '' ? null : hhId,
               track: track.trim() === '' ? null : track.trim(),
               priority: Number(priority || '0'),
@@ -341,6 +355,11 @@ function ProfileRow({
       {profile.parse_status === 'failed' && profile.parse_error ? (
         <p className="break-anywhere text-small font-semibold" role="alert">
           Почему не разобралось: {profile.parse_error}
+        </p>
+      ) : null}
+      {!slugValid ? (
+        <p className="text-small font-semibold" role="alert">
+          Метка — латиница в нижнем регистре, цифры, «-» и «_», до 50 символов.
         </p>
       ) : null}
       {!hhValid ? (
