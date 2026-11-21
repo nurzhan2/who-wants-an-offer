@@ -462,6 +462,24 @@ def test_a_skill_may_be_spelled_the_vacancy_s_way_because_that_is_the_feature() 
 
 
 @pytest.mark.unit
+def test_the_owner_s_own_spelling_is_never_a_rename() -> None:
+    """On 21 Nov every CV on the server failed, the fallback included.
+
+    The stored key of a skill the dictionary does not know ("rest api") is not
+    what the resume's own words fold to ("RESTful API"), so a CV that used the
+    owner's spelling was called a rename into another technology.
+    """
+    skills = (
+        *profile_facts().skills,
+        SkillFact(canonical_name="rest api", spelling="RESTful API", years=2.0, level="working"),
+    )
+    context = cv_context(profile=profile_facts(skills=skills))
+    choices = (SkillChoice(canonical_name="rest api", shown_as="RESTful API"),)
+
+    assert CVProblem.RENAMED_TO_ANOTHER_SKILL not in guard.check_skills(choices, context)
+
+
+@pytest.mark.unit
 def test_a_skill_renamed_into_a_different_technology_is_rejected() -> None:
     """The failure mode that looks exactly like the feature.
 

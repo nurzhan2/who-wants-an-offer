@@ -476,3 +476,68 @@ async def test_reacting_computes_the_profile_vectors_first(
 
     assert await react.react(db_session, [one]) == []
     assert order == ["vectors:True", "score"]
+
+
+@pytest.mark.unit
+def test_a_letter_answers_the_posting_in_its_own_language() -> None:
+    """An English posting from the Netherlands got a Russian letter on 21 Nov."""
+    from app.letters.context import VacancyFacts, posting_language
+
+    english = VacancyFacts(
+        vacancy_id=uuid7(),
+        title="Backend Software Developer",
+        description="We build remote APIs in TypeScript on AWS.",
+    )
+    russian = VacancyFacts(
+        vacancy_id=uuid7(),
+        title="Python-разработчик",
+        description="Пишем сервисы на FastAPI и PostgreSQL, нужен опыт с Docker.",
+    )
+    assert posting_language(english) == "en"
+    assert posting_language(russian) == "ru"
+    assert posting_language(VacancyFacts(vacancy_id=uuid7(), title="")) == "ru"
+
+
+@pytest.mark.db
+async def test_no_cv_means_no_message_to_the_recruiter(
+    db_session: AsyncSession,
+    profiles: Any,
+    vacancies: Any,
+    matches: Any,
+    chat: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A contact is written to once: a letter without the CV would waste it."""
+    monkeypatch.setattr(settings, "telegram_outreach_enabled", True)
+
+    async def letter(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
+        session.add(Application(id=uuid7(), vacancy_id=vacancy_id, cover_letter="Письмо."))
+        await session.flush()
+
+    class Unwritable:
+        document = None
+
+    async def cv(session: AsyncSession, vacancy_id: UUID, profile: Any, **_: Any) -> Any:
+        return Unwritable()
+
+    monkeypatch.setattr(react.letters, "write_letter", letter)
+    monkeypatch.setattr(react.documents, "write_cv", cv)
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    tg = await _posting(
+        vacancies,
+        "nocv",
+        "telegram",
+        "synthetic_jobs/2",
+        {"_derived": {"apply_contact": "@synthetic_hr2"}},
+    )
+
+    async def scored(session: AsyncSession, **_: Any) -> None:
+        await matches.bulk_upsert([make_match(backend.id, tg, Decimal("90"))])
+
+    monkeypatch.setattr(react, "score_corpus", scored)
+    sender = FakeSender()
+
+    await react.react(db_session, [tg], sender=sender)
+
+    assert sender.sent == []
+    assert "резюме под вакансию не собралось" in next(e[1] for e in chat if e[0] == "text")

@@ -243,8 +243,15 @@ async def _act(
             vacancy_key=str(item.vacancy_id),
             score=float(item.score),
         )
-        if not decision.allowed or sender is None or not letter_text:
-            reason = decision.reason if not decision.allowed else "нет письма или сессии"
+        if not decision.allowed or sender is None or not letter_text or cv is None:
+            # A message without the CV is half an application, and the contact
+            # can be written to only once: better the owner sends both by hand.
+            if not decision.allowed:
+                reason = decision.reason
+            elif cv is None:
+                reason = "резюме под вакансию не собралось"
+            else:
+                reason = "нет письма или сессии"
             contact = facts.get("contact") or "контакт в посте"
             return f"Telegram: напишите сами {contact} ({reason})."
         channel = f" из канала @{facts['channel']}" if facts.get("channel") else ""

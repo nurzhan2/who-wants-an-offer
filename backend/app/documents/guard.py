@@ -216,9 +216,17 @@ def check_skills(choices: tuple[SkillChoice, ...], context: CVContext) -> list[C
 
     if any(fold(choice.canonical_name) not in possessed for choice in choices):
         problems.append(CVProblem.INVENTED_SKILL)
+    # A skill may be shown as its key or as the owner's own spelling of it. The
+    # stored key is not always what the dictionary folds the resume's spelling
+    # to ("REST API" kept under a key the dictionary has never heard of), and a
+    # CV must never be failed for using the words of the owner's own resume.
+    own_spellings: dict[str, set[str]] = {}
+    for skill in context.profile.skills:
+        key = fold(skill.canonical_name)
+        own_spellings.setdefault(key, {key}).add(fold(skill.spelling))
     if any(
         fold(choice.canonical_name) in possessed
-        and fold(choice.shown_as) != fold(choice.canonical_name)
+        and fold(choice.shown_as) not in own_spellings.get(fold(choice.canonical_name), set())
         for choice in choices
     ):
         problems.append(CVProblem.RENAMED_TO_ANOTHER_SKILL)

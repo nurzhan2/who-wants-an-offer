@@ -229,15 +229,35 @@ def overlap_of(required: tuple[str, ...], profile: ProfileFacts) -> SkillOverlap
     )
 
 
+#: Below this share of Cyrillic letters a posting is answered in English. A
+#: Russian posting quotes English stack names all the time, so the bar is low.
+CYRILLIC_SHARE_FOR_RUSSIAN = 0.3
+
+
+def posting_language(vacancy: VacancyFacts) -> str:
+    """``ru`` or ``en``: the language the posting itself is written in.
+
+    A letter and a CV answer a posting in its own language. Counted over the
+    title and the description; an empty posting stays Russian, this market's
+    default.
+    """
+    text = f"{vacancy.title} {vacancy.description or ''}"
+    cyrillic = sum(1 for char in text if "\u0400" <= char <= "\u04ff")
+    latin = sum(1 for char in text if "a" <= char.lower() <= "z")
+    if cyrillic + latin == 0:
+        return "ru"
+    return "ru" if cyrillic / (cyrillic + latin) >= CYRILLIC_SHARE_FOR_RUSSIAN else "en"
+
+
 def build_context(
-    vacancy: VacancyFacts, profile: ProfileFacts, *, language: str = "ru"
+    vacancy: VacancyFacts, profile: ProfileFacts, *, language: str | None = None
 ) -> LetterContext:
-    """Assemble the context a letter is generated from."""
+    """Assemble the context a letter is generated from, in the posting's language."""
     return LetterContext(
         vacancy=vacancy,
         profile=profile,
         overlap=overlap_of(vacancy.key_skills, profile),
-        language=language,
+        language=language or posting_language(vacancy),
     )
 
 

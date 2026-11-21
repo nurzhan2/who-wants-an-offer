@@ -50,6 +50,7 @@ from app.letters.context import (
     VacancyFacts,
     fold,
     overlap_of,
+    posting_language,
 )
 
 #: Longest summary a generated CV may carry, in characters. A CV summary is
@@ -179,7 +180,7 @@ def build_context(
     contacts: ContactBlock,
     experience: tuple[ExperienceEntry, ...] = (),
     education: tuple[EducationEntry, ...] = (),
-    language: str = "ru",
+    language: str | None = None,
 ) -> CVContext:
     """Assemble the context a tailored CV is generated from.
 
@@ -196,7 +197,7 @@ def build_context(
         experience=experience[:MAX_EXPERIENCE_ENTRIES],
         education=education,
         overlap=overlap_of(vacancy.key_skills, profile),
-        language=language,
+        language=language or posting_language(vacancy),
     )
 
 
