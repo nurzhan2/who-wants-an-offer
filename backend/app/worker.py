@@ -47,6 +47,10 @@ HH_SLUG = "hh"
 HH_IDLE_SECONDS = 600
 #: When the morning summary goes out, UTC. 03:30 UTC is 08:30 in Almaty.
 SUMMARY_AT_UTC = time(3, 30)
+#: On start, what the worker looks back over: vacancies a previous run found
+#: but could not act on (no resume yet, no vectors yet, a crash). Reacting is
+#: idempotent per vacancy, so nothing is answered twice.
+CATCH_UP = timedelta(days=3)
 
 
 async def new_since(since: datetime) -> list[UUID]:
@@ -72,6 +76,16 @@ async def crawl_and_react(slugs: Sequence[str], *, sender: Sender | None) -> int
             reactions = await react.react(session, fresh, sender=sender)
         logger.info("worker.reacted", new=len(fresh), acted=len(reactions))
     return len(fresh)
+
+
+async def catch_up(*, sender: Sender | None) -> int:
+    """React to the recent vacancies a previous run left unanswered."""
+    recent = await new_since(datetime.now(UTC) - CATCH_UP)
+    if recent:
+        async with session_factory() as session:
+            reactions = await react.react(session, recent, sender=sender)
+        logger.info("worker.caught_up", recent=len(recent), acted=len(reactions))
+    return len(recent)
 
 
 def fast_slugs() -> list[str]:
@@ -132,6 +146,7 @@ async def main() -> None:
         outreach=sender is not None,
         budget_usd=settings.llm_max_cost_per_day_usd,
     )
+    await catch_up(sender=sender)
     tasks = [
         asyncio.create_task(fast_loop(sender), name="worker-fast"),
         asyncio.create_task(hh_loop(sender), name="worker-hh"),

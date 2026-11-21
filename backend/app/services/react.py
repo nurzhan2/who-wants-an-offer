@@ -38,6 +38,7 @@ from app.documents import service as documents
 from app.letters import service as letters
 from app.letters import store as letters_store
 from app.llm import usage as usage_ledger
+from app.matching import profile_vectors
 from app.matching.best import best_profiles
 from app.matching.scorer import ProfileNotReadyError, score_corpus
 from app.services import notify, outreach
@@ -101,6 +102,12 @@ async def react(
     """Score these vacancies, then act on the ones worth acting on, best first."""
     if not vacancy_ids:
         return []
+    # A profile uploaded on the server has no vectors until something computes
+    # them, and without the headline's every title scores as unknown. Cheap
+    # when they exist: one SELECT per active profile.
+    note = await profile_vectors.ensure_profile_embedding(session, allowed=True)
+    if note:
+        logger.info("worker.profile_vectors", note=note)
     try:
         await score_corpus(session, vacancy_ids=vacancy_ids)
     except ProfileNotReadyError:

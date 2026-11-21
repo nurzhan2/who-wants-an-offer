@@ -428,3 +428,51 @@ def test_outreach_needs_its_switch_and_a_session(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(settings, "telegram_api_hash", SecretStr("h"))
     monkeypatch.setattr(settings, "telegram_session_string", SecretStr("synthetic"))
     assert worker.outreach_sender() is not None
+
+
+@pytest.mark.db
+async def test_on_start_the_worker_answers_what_a_previous_run_left(
+    db_session: AsyncSession, vacancies: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vacancy found while no resume or no vectors existed is not lost."""
+    from app import worker
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    recent = await _posting(vacancies, "recent", "remotive", "r-recent", {})
+    seen: list[list[UUID]] = []
+
+    async def react_(session: AsyncSession, ids: list[UUID], **_: Any) -> list[Any]:
+        seen.append(ids)
+        return []
+
+    monkeypatch.setattr(worker, "session_factory", factory)
+    monkeypatch.setattr(worker.react, "react", react_)
+
+    assert await worker.catch_up(sender=None) == 1
+    assert seen == [[recent]]
+
+
+@pytest.mark.db
+async def test_reacting_computes_the_profile_vectors_first(
+    db_session: AsyncSession, profiles: Any, vacancies: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without the headline's vector every title scores as unknown."""
+    order: list[str] = []
+
+    async def vectors(session: AsyncSession, *, allowed: bool) -> str:
+        order.append(f"vectors:{allowed}")
+        return "эмбеддинг заголовка посчитан впервые"
+
+    async def scored(session: AsyncSession, **_: Any) -> None:
+        order.append("score")
+
+    monkeypatch.setattr(react.profile_vectors, "ensure_profile_embedding", vectors)
+    monkeypatch.setattr(react, "score_corpus", scored)
+    await profiles.create(make_profile(slug="backend", priority=0))
+    one = await _posting(vacancies, "one", "remotive", "r-one", {})
+
+    assert await react.react(db_session, [one]) == []
+    assert order == ["vectors:True", "score"]
