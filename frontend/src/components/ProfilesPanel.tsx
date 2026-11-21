@@ -338,6 +338,11 @@ function ProfileRow({
           }}
         />
       </div>
+      {profile.parse_status === 'failed' && profile.parse_error ? (
+        <p className="break-anywhere text-small font-semibold" role="alert">
+          Почему не разобралось: {profile.parse_error}
+        </p>
+      ) : null}
       {!hhValid ? (
         <p className="text-small font-semibold" role="alert">
           hh-id — 38 символов 0–9 и a–f из адреса резюме на hh.
