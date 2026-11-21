@@ -702,6 +702,51 @@ async def test_a_bad_request_is_not_retried(make_provider: MakeProvider) -> None
     assert len(fake.messages.calls) == 1
 
 
+def schema_too_complex() -> Exception:
+    """The 400 the API returns when it will not compile a response schema."""
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.BadRequestError(
+        "Schema is too complex.",
+        response=httpx.Response(400, request=request),
+        body=None,
+    )
+
+
+async def test_a_schema_too_complex_is_asked_again_without_the_constraint(
+    make_provider: MakeProvider,
+) -> None:
+    """The resume schema is past the API's grammar limit. The same request,
+    unconstrained and with the schema as text, still has to validate."""
+    provider, fake = make_provider(
+        schema_too_complex(),
+        FakeResponse(text='```json\n{"name": "Ivan", "score": 3}\n```'),
+    )
+
+    result = await complete(provider)
+
+    assert result.value == Answer(name="Ivan", score=3)
+    first, second = fake.messages.calls
+    assert first["output_format"] is Answer
+    assert "output_format" not in second
+    assert '"name"' in second["messages"][0]["content"][-1]["text"]
+
+
+async def test_a_refused_schema_is_not_offered_again(make_provider: MakeProvider) -> None:
+    """One refusal is enough: the next call goes straight to plain JSON."""
+    provider, fake = make_provider(
+        schema_too_complex(),
+        FakeResponse(text='{"name": "a"}'),
+        FakeResponse(text='{"name": "b"}'),
+    )
+
+    await complete(provider)
+    second = await complete(provider)
+
+    assert second.value.name == "b"
+    assert len(fake.messages.calls) == 3
+    assert "output_format" not in fake.messages.calls[2]
+
+
 # ── logging ───────────────────────────────────────────────────────────
 
 

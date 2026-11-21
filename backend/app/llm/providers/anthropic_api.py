@@ -25,6 +25,7 @@ What this adds over the bare SDK:
 """
 
 import base64
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -125,6 +126,9 @@ class AnthropicAPIProvider(BatchViaLoop):
 
     def __init__(self, client: AsyncAnthropic | None = None) -> None:
         self._client = client or self._build_client()
+        #: Response models whose schema the API refused to compile; asked for
+        #: as plain JSON from then on instead of paying for a refusal each time.
+        self._schema_too_complex: set[str] = set()
 
     def is_available(self) -> bool:
         """Whether a key is configured. Nothing is sent to find out."""
@@ -192,19 +196,46 @@ class AnthropicAPIProvider(BatchViaLoop):
         content.extend(document_block(document) for document in documents)
         content.append({"type": "text", "text": rendered})
 
+        constrained = response_model.__name__ not in self._schema_too_complex
+        if not constrained:
+            content.append(_schema_instruction(response_model))
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
         total = TokenUsage()
         budget = RetryBudget(remaining=settings.anthropic_max_retries + 1)
 
         for attempt in (1, 2):
-            response = await self._call(
-                model=model,
-                messages=messages,
-                response_model=response_model,
-                effort=chosen_effort,
-                max_tokens=max_tokens or settings.anthropic_max_tokens,
-                budget=budget,
-            )
+            try:
+                response = await self._call(
+                    model=model,
+                    messages=messages,
+                    response_model=response_model if constrained else None,
+                    effort=chosen_effort,
+                    max_tokens=max_tokens or settings.anthropic_max_tokens,
+                    budget=budget,
+                )
+            except anthropic.BadRequestError as exc:
+                if not constrained or not _schema_rejected(exc):
+                    raise
+                # The API compiles the schema into a grammar and refuses one
+                # past its size limit (the resume extraction schema is). The
+                # same request without the constraint, the schema given as
+                # text, still ends in the validator below — a weaker guarantee,
+                # and the log says so through ``source``.
+                logger.warning(
+                    "llm.schema_too_complex", prompt=prompt_name, schema=response_model.__name__
+                )
+                self._schema_too_complex.add(response_model.__name__)
+                constrained = False
+                content.append(_schema_instruction(response_model))
+                messages = [{"role": "user", "content": content}]
+                response = await self._call(
+                    model=model,
+                    messages=messages,
+                    response_model=None,
+                    effort=chosen_effort,
+                    max_tokens=max_tokens or settings.anthropic_max_tokens,
+                    budget=budget,
+                )
             total = total + _usage_of(response)
 
             # Before anything reads content: a refusal is a 200 with nothing in
@@ -264,7 +295,7 @@ class AnthropicAPIProvider(BatchViaLoop):
         *,
         model: str,
         messages: list[dict[str, Any]],
-        response_model: type[BaseModel],
+        response_model: type[BaseModel] | None,
         effort: Effort,
         max_tokens: int,
         budget: RetryBudget,
@@ -286,13 +317,16 @@ class AnthropicAPIProvider(BatchViaLoop):
         try:
             async for policy in retrying:
                 with policy:
+                    constraint: dict[str, Any] = (
+                        {"output_format": response_model} if response_model is not None else {}
+                    )
                     response: Message = await self._client.messages.parse(
                         model=model,
                         max_tokens=max_tokens,
                         messages=messages,  # type: ignore[arg-type]
-                        output_format=response_model,
                         output_config={"effort": effort},
                         thinking={"type": "adaptive"},
+                        **constraint,
                     )
                     return response
         finally:
@@ -382,4 +416,27 @@ def _parsed[ResultT: BaseModel](
     text = _text_of(response)
     if text is None:
         raise ValueError("response carried no text block to validate")
-    return response_model.model_validate_json(text), "text_fallback"
+    return response_model.model_validate_json(_json_object(text)), "text_fallback"
+
+
+def _json_object(text: str) -> str:
+    """The JSON object in a free-form answer: fences and any prose around it dropped."""
+    start, end = text.find("{"), text.rfind("}")
+    return text[start : end + 1] if 0 <= start < end else text
+
+
+def _schema_rejected(exc: anthropic.BadRequestError) -> bool:
+    """Whether a 400 is the API refusing the output schema, not the request."""
+    return "schema" in str(exc.message).casefold()
+
+
+def _schema_instruction(response_model: type[BaseModel]) -> dict[str, Any]:
+    """The schema as text, for a call the API would not constrain by it."""
+    schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
+    return {
+        "type": "text",
+        "text": (
+            "Return only one JSON object, with no prose and no code fences, that "
+            f"validates against this JSON Schema:\n{schema}"
+        ),
+    }
