@@ -29,10 +29,13 @@ from factories import make_match, make_profile, make_vacancy
 pytestmark = pytest.mark.db
 
 
-async def _vacancy(vacancies: Any, seed: str, slug: str = "hh", external: str = "1") -> Any:
+async def _vacancy(
+    vacancies: Any, seed: str, slug: str = "hh", external: str = "1", *, age_days: int = 1
+) -> Any:
+    published = datetime.now(UTC) - timedelta(days=age_days)
     return (
         await vacancies.upsert_by_external_id(
-            make_vacancy(seed, title=f"Python {seed}"),
+            make_vacancy(seed, title=f"Python {seed}", published_at=published),
             source_slug=slug,
             external_id=external,
             url=f"https://example.test/{slug}/{external}",
@@ -48,11 +51,13 @@ async def test_the_summary_counts_ranks_and_lists_what_broke(
     llm = await profiles.create(make_profile(slug="llm", priority=1))
     first = await _vacancy(vacancies, "a", "hh", "137000001")
     second = await _vacancy(vacancies, "b", "telegram", "chan/1")
+    stale = await _vacancy(vacancies, "old", "hh", "137000009", age_days=60)
     await matches.bulk_upsert(
         [
             make_match(backend.id, first, Decimal("88")),
             make_match(llm.id, first, Decimal("70")),
             make_match(llm.id, second, Decimal("91")),
+            make_match(backend.id, stale, Decimal("99")),
         ]
     )
     db_session.add(
@@ -78,13 +83,14 @@ async def test_the_summary_counts_ranks_and_lists_what_broke(
 
     summary = await daily.build_summary(db_session, since=since)
 
-    assert summary.new_by_source == {"hh": 1, "telegram": 1}
+    assert summary.new_by_source == {"hh": 2, "telegram": 1}
     assert [(row["profile"], row["score"]) for row in summary.top] == [
         ("llm", 91.0),
         ("backend", 88.0),
     ]
     text = summary.render()
-    assert "Новых вакансий: 2" in text
+    assert "Новых вакансий: 3" in text
+    assert "Python old" not in text, "a two-month-old posting does not top the morning"
     assert "91 · llm · Python b" in text
     assert "https://example.test/telegram/chan/1" in text
     assert "hh: частично" in text and "проверка на робота" in text

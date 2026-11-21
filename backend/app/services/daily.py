@@ -43,6 +43,11 @@ logger = get_logger(__name__)
 #: Telegram refuses a message longer than this many characters.
 TELEGRAM_LIMIT: Final[int] = 4096
 TOP: Final[int] = 15
+#: How old a vacancy may be to make the morning's top: by its publication date
+#: when the source states one, else by when we first saw it. A two-month-old
+#: posting at the top of the list is one the owner has seen, or one that is
+#: closed — measured on the owner's first run, 21 Nov 2026.
+TOP_MAX_AGE_DAYS: Final[int] = 21
 TELEGRAM_API: Final[str] = "https://api.telegram.org"
 
 
@@ -64,7 +69,9 @@ class DailySummary:
         total = sum(self.new_by_source.values())
         lines.append(f"\nНовых вакансий: {total}")
         lines += [f"  {slug}: {count}" for slug, count in sorted(self.new_by_source.items())]
-        lines.append(f"\nТоп-{len(self.top)} по лучшему резюме:")
+        lines.append(
+            f"\nТоп-{len(self.top)} по лучшему резюме (опубликованы за {TOP_MAX_AGE_DAYS} дн.):"
+        )
         for index, row in enumerate(self.top, start=1):
             company = f" — {row['company']}" if row.get("company") else ""
             lines.append(
@@ -142,6 +149,10 @@ async def _top(session: AsyncSession, *, since: datetime) -> list[dict[str, Any]
         .where(Match.profile_id == best_profile_id(Vacancy.id))
         .where(Vacancy.is_active.is_(True), Vacancy.is_spam.is_(False))
         .where(Match.bucket != MatchBucket.FILTERED)
+        .where(
+            func.coalesce(Vacancy.published_at, Vacancy.first_seen_at)
+            >= datetime.now(UTC) - timedelta(days=TOP_MAX_AGE_DAYS)
+        )
         .order_by(Match.score.desc())
         .limit(TOP)
     )
