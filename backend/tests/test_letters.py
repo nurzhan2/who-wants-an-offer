@@ -67,6 +67,7 @@ from app.letters import service as letters_service
 from app.letters import store
 from app.letters.channel import SourceScope
 from app.letters.context import (
+    AchievementFact,
     ProfileFacts,
     SkillFact,
     VacancyFacts,
@@ -95,6 +96,7 @@ from app.letters.generator import (
     compose_fallback,
     generate,
     inspect_draft,
+    letter_numbers_unsupported,
 )
 from app.letters.guard import (
     DEFAULT_MAX_LENGTH,
@@ -762,11 +764,20 @@ def test_the_fallback_answers_the_requirements_and_volunteers_no_gap() -> None:
 
 
 @pytest.mark.unit
-def test_the_fallback_counts_years_in_the_case_russian_requires() -> None:
-    """It is 4 года, not 4 лет. A letter that gets this wrong reads as generated."""
+def test_the_fallback_prints_no_count_of_years() -> None:
+    """A small figure next to a skill reads as the weakness (research, 4.7).
+
+    The fallback used to write "Python (4 года)"; for the owner that is
+    "Python (1 год)" in front of a vacancy asking for three. The dates are in
+    the CV the recruiter opens next.
+    """
     context = build_context(vacancy_facts(), profile_facts())
 
-    assert "4 года" in compose_fallback(context).text
+    text = compose_fallback(context).text
+
+    assert "года" not in text
+    assert "лет" not in text
+    assert "4" not in text
 
 
 @pytest.mark.unit
@@ -783,7 +794,7 @@ def test_a_company_whose_name_is_a_domain_does_not_become_a_link() -> None:
     fallback = compose_fallback(context)
 
     assert "Kaspi.kz" not in fallback.text
-    assert "Из того, что перечислено в требованиях" in fallback.text
+    assert "из стека вакансии в работе использую Python и PostgreSQL" in fallback.text
     assert find_problems(fallback.text) == []
 
 
@@ -806,7 +817,7 @@ def test_a_matched_skill_is_never_dropped_the_way_a_company_name_is() -> None:
 
     fallback = compose_fallback(context)
 
-    assert "Ceph (2 года)" in fallback.text
+    assert "использую Ceph." in fallback.text
     assert fallback.addressed_skills == ("Ceph",)
     assert fallback.unnameable_skills == ()
     assert find_problems(fallback.text) == []
@@ -845,10 +856,11 @@ def test_the_fallback_drops_whole_paragraphs_rather_than_cutting_a_word() -> Non
     paragraph of the result has to be a whole paragraph of the untruncated
     letter.
     """
-    whole = compose_fallback(build_context(vacancy_facts(), profile_facts())).text
+    profile = profile_facts(achievements=ACHIEVEMENTS)
+    whole = compose_fallback(build_context(vacancy_facts(), profile)).text
     paragraphs = whole.split("\n\n")
     limit = len(whole) - len(paragraphs[-1]) - 4
-    context = build_context(vacancy_facts(letter_max_length=limit), profile_facts())
+    context = build_context(vacancy_facts(letter_max_length=limit), profile)
 
     text = compose_fallback(context).text
 
@@ -875,6 +887,147 @@ def test_a_vacancy_with_no_structured_skills_still_gets_a_letter() -> None:
 
     assert "Backend Engineer" in fallback.text
     assert find_problems(fallback.text) == []
+
+
+#: Synthetic bullets from two jobs, one English and one Russian, so the
+#: fallback's choice of proof and of language can both be observed.
+ACHIEVEMENTS = (
+    AchievementFact(
+        company="Acme",
+        title="Backend Engineer",
+        text="Wrote the onboarding guide used by 6 new engineers.",
+    ),
+    AchievementFact(
+        company="Acme",
+        title="Backend Engineer",
+        text="Cut PostgreSQL query time for the reports API from 900 ms to 120 ms.",
+    ),
+    AchievementFact(
+        company="Acme",
+        title="Backend Engineer",
+        text="Built a Python service that reconciles 40,000 payments a day.",
+    ),
+    AchievementFact(
+        company="Globex",
+        title="Python Developer",
+        text="Разработал сервис выгрузки отчётов на Python для 12 клиентов.",
+    ),
+)
+
+
+def english_posting(**overrides: Any) -> VacancyFacts:
+    """A posting written in English, so the letter is English."""
+    defaults: dict[str, Any] = {
+        "title": "Backend Engineer",
+        "company": "Northwind",
+        "description": "We build reporting APIs in Python on PostgreSQL. Fully remote.",
+    }
+    return vacancy_facts(**(defaults | overrides))
+
+
+@pytest.mark.unit
+def test_an_english_posting_gets_a_short_english_fallback_letter() -> None:
+    """The fallback was Russian-only; an English posting got a Russian letter.
+
+    Order as the prompt asks of the model — role, identity, proof, next step —
+    with the proofs quoted verbatim from the stored achievements, no gap named,
+    and short enough for one screen.
+    """
+    profile = profile_facts(name="Alex Doe", achievements=ACHIEVEMENTS)
+    context = build_context(english_posting(), profile)
+    assert context.language == "en"
+
+    text = compose_fallback(context).text
+
+    assert text.startswith("Hello,")
+    assert "I'm applying for the Backend Engineer role at Northwind." in text
+    assert "I work with Python and PostgreSQL" in text
+    assert f"• {ACHIEVEMENTS[1].text}" in text
+    assert f"• {ACHIEVEMENTS[2].text}" in text
+    assert "Kubernetes" not in text, "a requirement not held is not named"
+    assert not any("\u0400" <= char <= "\u04ff" for char in text), text
+    assert 300 <= len(text) <= 1000
+    assert find_problems(text) == []
+    assert letter_numbers_unsupported(text, context) == ()
+
+
+@pytest.mark.unit
+def test_the_fallback_quotes_the_achievements_that_answer_the_vacancy() -> None:
+    """Relevance is counted: the bullets naming the requirements come first.
+
+    The onboarding guide is the first bullet in the resume and names nothing the
+    vacancy asked for, so it loses to the two that name Python and PostgreSQL.
+    """
+    context = build_context(english_posting(), profile_facts(achievements=ACHIEVEMENTS))
+
+    text = compose_fallback(context).text
+
+    assert ACHIEVEMENTS[0].text not in text
+    assert text.index(ACHIEVEMENTS[1].text) < text.index(ACHIEVEMENTS[2].text)
+    assert "At Acme, I:" in text
+
+
+@pytest.mark.unit
+def test_a_proof_in_the_other_language_is_not_pasted_into_the_letter() -> None:
+    """A Russian letter quotes the Russian bullet and leaves the English ones out."""
+    context = build_context(vacancy_facts(), profile_facts(achievements=ACHIEVEMENTS))
+    assert context.language == "ru"
+
+    text = compose_fallback(context).text
+
+    assert f"• {ACHIEVEMENTS[3].text}" in text
+    assert "Что сделал в Globex:" in text
+    assert ACHIEVEMENTS[1].text not in text
+    assert find_problems(text) == []
+
+
+@pytest.mark.unit
+def test_a_proof_paragraph_never_mixes_two_employers() -> None:
+    """ "At Acme, I:" over a Globex bullet would give Acme credit for Globex's work."""
+    mixed = (
+        AchievementFact(company="Acme", title="Dev", text="Built a Python API for 3 teams."),
+        AchievementFact(company="Globex", title="Dev", text="Tuned PostgreSQL for 8 services."),
+    )
+    context = build_context(english_posting(), profile_facts(achievements=mixed))
+
+    text = compose_fallback(context).text
+
+    assert "At Acme, I:" in text
+    assert "Globex" not in text and mixed[1].text not in text
+
+
+@pytest.mark.unit
+def test_a_letter_with_a_number_nobody_recorded_is_rejected() -> None:
+    """A proof is the owner's figure; a figure from nowhere is the lie to catch.
+
+    The time-zone offset is the one number a letter may state that no record
+    holds, because it is the city's and the vacancy may ask for overlap.
+    """
+    context = build_context(english_posting(), profile_facts(achievements=ACHIEVEMENTS))
+    honest = draft(
+        letter_of("At Acme I cut report query time from 900 ms to 120 ms. I am in UTC+5."),
+        addressed_skills=["Python"],
+    )
+    inflated = draft(
+        letter_of("At Acme I cut report query time by 95%, across 50,000 payments."),
+        addressed_skills=["Python"],
+    )
+
+    assert LetterProblem.UNSUPPORTED_NUMBER not in inspect_draft(honest, context)
+    assert LetterProblem.UNSUPPORTED_NUMBER in inspect_draft(inflated, context)
+
+
+@pytest.mark.unit
+def test_the_letter_prompt_carries_the_achievements_and_asks_for_no_gaps() -> None:
+    """The proofs a model may cite are in its prompt, with their employer."""
+    context = build_context(vacancy_facts(), profile_facts(achievements=ACHIEVEMENTS))
+
+    rendered = prompts.render("cover_letter", **prompt_builder.variables(context))
+
+    assert f"at Acme: {ACHIEVEMENTS[1].text}" in rendered
+    assert "the only numbers the letter may cite" in rendered
+    assert "do not mention them at all" in rendered
+    assert "name these plainly" not in rendered
 
 
 # ── the database ──────────────────────────────────────────────────────

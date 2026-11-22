@@ -30,8 +30,11 @@ of experience when it is below what the vacancy asks for.
 **Short, in this order.** (1) The exact role and one specific detail from this
 vacancy that connects to the candidate's work — never "I am writing to…".
 (2) One line: who the candidate is — title, core stack. (3) One to three proofs
-from the profile that answer the vacancy's main requirements, each with a
-number or a named system when the profile has one. (4) Format and time zone
+from the profile's recorded achievements that answer the vacancy's main
+requirements, each with its number or named system when the achievement has
+one. Quote figures exactly as the achievement gives them and never move an
+achievement to another employer; **a number that is in neither the profile nor
+the vacancy is rejected in code**. (4) Format and time zone
 only if the vacancy cares. (5) A small concrete next step ("happy to do a
 technical call this week"). Aim for 600–1 000 characters, three or four short
 paragraphs; never more than 1 500. No adjectives about the candidate's

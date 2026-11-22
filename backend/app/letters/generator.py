@@ -59,6 +59,7 @@ agent's job, and only after a human has confirmed it.
 # project grants app/sources/hh.py and agent/*.py in pyproject.toml,
 # declared here because pyproject.toml belongs to another change.
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -68,7 +69,14 @@ from app.core.exceptions import AppError, LLMError
 from app.core.logging import get_logger
 from app.db.enums import RuleKind, RuleScope
 from app.letters import prompt as prompt_builder
-from app.letters.context import LetterContext, MatchedSkill, fold
+from app.letters.context import (
+    AchievementFact,
+    LetterContext,
+    MatchedSkill,
+    fold,
+    text_language,
+    unsupported_numbers,
+)
 from app.letters.examples import ChosenExample
 from app.letters.guard import (
     ENGLISH,
@@ -265,7 +273,44 @@ def inspect_draft(draft: CoverLetterDraft, context: LetterContext) -> list[Lette
     if prompt_builder.FENCE_OPEN in draft.letter or prompt_builder.FENCE_CLOSE in draft.letter:
         problems.append(LetterProblem.LEAKED_FENCE)
 
+    if letter_numbers_unsupported(draft.letter, context):
+        problems.append(LetterProblem.UNSUPPORTED_NUMBER)
+
     return problems
+
+
+#: A time-zone offset ("UTC+5", "GMT+3"). Stated for a remote role because the
+#: vacancy cares about overlap; the figure is the city's, not a claim about the
+#: candidate's work, and no profile field records it.
+_TIME_ZONE = re.compile(r"\b(?:UTC|GMT)\s*[+\u2212-]\s*\d{1,2}(?::\d{2})?\b", re.IGNORECASE)
+
+
+def letter_numbers_unsupported(text: str, context: LetterContext) -> tuple[str, ...]:
+    """Figures in the letter found neither in the profile nor in the vacancy.
+
+    The prose check a letter can afford. :func:`inspect_draft` explains why the
+    letter's words are not searched for missing skills; numbers are different,
+    because a letter never needs to quote a figure it was not given. The
+    evidence is everything the profile records (its achievements included) and
+    everything the vacancy says about itself — "3+ years of Python" in a
+    posting is a figure the letter may answer — so a hit is a figure that came
+    from nowhere.
+    """
+    vacancy = context.vacancy
+    evidence = "\n".join(
+        part
+        for part in (
+            context.profile.recorded_text,
+            vacancy.title,
+            vacancy.company or "",
+            vacancy.description or "",
+            vacancy.work_experience or "",
+            *vacancy.key_skills,
+            *vacancy.language_requirements,
+        )
+        if part
+    )
+    return unsupported_numbers(_TIME_ZONE.sub(" ", text), evidence)
 
 
 #: Which ``LetterProblem`` each built-in workshop rule is reported as. The
@@ -447,6 +492,8 @@ async def generate(
     )
 
     remaining = find_problems(fallback.text, max_length=context.vacancy.letter_max_length)
+    if letter_numbers_unsupported(fallback.text, context):  # pragma: no cover - quotes only
+        remaining.append(LetterProblem.UNSUPPORTED_NUMBER)
     # The fallback is assembled from the database and cannot be told to try
     # again, so a hard rule it breaks is the end of the road. That is the
     # reachable case for a demanding rule — «в навыках не меньше 21 пункта»
@@ -549,64 +596,186 @@ class FallbackLetter:
     unnameable_skills: tuple[str, ...] = ()
 
 
+#: Where the rule-based letter stops adding proofs, in characters. The prompt
+#: asks the model for 600 to 1 000 and the research's band for a first message is
+#: the same (docs/WORKSHOP-RESEARCH.md, 4.6); a fallback that ran to the
+#: vacancy's 10 000 would be the one letter a recruiter does not finish.
+FALLBACK_TARGET_CHARS = 1000
+
+#: Most achievements the rule-based letter quotes. "One to three proofs" is the
+#: prompt's rule; two keeps the letter inside one phone screen.
+FALLBACK_PROOFS = 2
+
+#: The rule-based letter in each language it is written in. Everything else is
+#: assembled from the context; these are the only words this module supplies.
+PHRASES: dict[str, dict[str, str]] = {
+    "ru": {
+        "greeting": "Здравствуйте!",
+        "identity": "Я — {headline}.",
+        "identity_stack": "Я — {headline}; из стека вакансии в работе использую {skills}.",
+        "stack_only": "Из стека вакансии в работе использую {skills}.",
+        "proofs": "Что сделал в {company}:",
+        "proofs_no_company": "Что сделал на последнем месте работы:",
+        "other": "Также работаю с {skills}.",
+        "closing": "Готов созвониться и рассказать подробнее.",
+        "sign_off": "С уважением, {name}",
+        "sign_off_bare": "С уважением",
+        "and": "и",
+    },
+    "en": {
+        "greeting": "Hello,",
+        "identity": "I'm a {headline}.",
+        "identity_stack": "I'm a {headline}, and of the stack you list I work with {skills}.",
+        "stack_only": "Of the stack you list, I work with {skills}.",
+        "proofs": "At {company}, I:",
+        "proofs_no_company": "In my current role, I:",
+        "other": "I also work with {skills}.",
+        "closing": "Happy to do a technical call this week.",
+        "sign_off": "Best regards,\n{name}",
+        "sign_off_bare": "Best regards",
+        "and": "and",
+    },
+}
+
+
 def compose_fallback(context: LetterContext) -> FallbackLetter:
     """A letter built from the context alone, with no model involved.
 
-    Dull, short, true: every sentence is assembled from values already in the
-    database, and every one of them is passed through the link guard before it
-    goes in. Dropping a fragment that trips the guard is allowed here in a way it
-    is never allowed for a letter a person wrote — nobody wrote this, so nothing
+    Short and true, in the posting's language, in the order the prompt asks of
+    the model: the role, one line of who the candidate is, one or two of the
+    owner's own achievements quoted verbatim, a next step. Every value is read
+    from the database and passed through the link guard before it goes in.
+    Dropping a fragment that trips the guard is allowed here in a way it is
+    never allowed for a letter a person wrote — nobody wrote this, so nothing
     is being silently changed on anyone's behalf.
+
+    **No gaps, no years.** Nothing the candidate lacks is named, and no count
+    of years is printed: the research behind the workshop (4.7) is plain that a
+    small figure next to a skill reads as the weakness, and the dates are in
+    the CV the recruiter opens next.
+
+    **Proofs are quoted, not written.** The achievements chosen are the ones
+    that name the most of what the vacancy asked for, then those with a figure
+    in them, the resume's order breaking ties — and only those written in the
+    letter's language, because an English bullet inside a Russian letter is the
+    mixed document the owner rejected. A bullet that trips the link guard is
+    skipped, never edited.
 
     **What may be dropped and what may not.** An employer's name is droppable:
     a company genuinely called "Kaspi.kz" is the ordinary case on this market,
     the opening simply does not name where the vacancy is, and the letter still
     says everything it came to say. A *matched skill* is not droppable, it is the
-    sentence the letter exists to carry — a candidate whose overlap is ASP.NET
-    and socket.io would otherwise be sent a letter that claims nothing at all,
-    with nobody told. So a matched skill is written under the resume's spelling,
-    or failing that under the vacancy's own — they are the same skill, that is
-    what ``matched`` means — and if neither can be written, it is reported in
-    :attr:`FallbackLetter.unnameable_skills` and logged by :func:`generate`
-    instead of disappearing.
+    sentence the letter exists to carry. So a matched skill is written under the
+    resume's spelling, or failing that under the vacancy's own — they are the
+    same skill, that is what ``matched`` means — and if neither can be written,
+    it is reported in :attr:`FallbackLetter.unnameable_skills` and logged by
+    :func:`generate` instead of disappearing.
     """
+    language = context.language if context.language in PHRASES else "en"
+    words = PHRASES[language]
     vacancy = context.vacancy
-    overlap = context.overlap
     title = vacancy.title if is_safe(vacancy.title) else None
     company = vacancy.company if vacancy.company and is_safe(vacancy.company) else None
+    headline = context.profile.headline
+    headline = headline if headline and is_safe(headline) else None
 
-    paragraphs = ["Здравствуйте!", _opening(title, company)]
+    paragraphs = [words["greeting"], _opening(title, company, language)]
 
-    named, unnameable = _nameable(overlap.matched)
-    if named:
-        paragraphs.append(
-            "Из того, что перечислено в требованиях, у меня есть коммерческий "
-            f"опыт работы с: {_enumerate([_skill_phrase(*pair) for pair in named])}."
-        )
-    elif context.profile.headline and is_safe(context.profile.headline):
-        paragraphs.append(f"Моя специализация — {context.profile.headline}.")
+    named, unnameable = _nameable(context.overlap.matched)
+    skills = _enumerate([spelling for _, spelling in named], words["and"]) if named else ""
+    if headline and skills:
+        paragraphs.append(words["identity_stack"].format(headline=headline, skills=skills))
+    elif skills:
+        paragraphs.append(words["stack_only"].format(skills=skills))
+    elif headline:
+        paragraphs.append(words["identity"].format(headline=headline))
 
-    # Gaps are not volunteered (21 Nov 2026, the workshop research): the
-    # recruiter reads the CV, and a letter is the case for an interview.
+    for proof in _proofs(context, language):
+        if len("\n\n".join((*paragraphs, proof))) <= FALLBACK_TARGET_CHARS:
+            paragraphs.append(proof)
+            break
 
-    other = [name for name in overlap.other[:3] if is_safe(name)]
+    # The rest of the stack, briefly, when it fits. With no achievement to
+    # quote — a profile parsed before migration 0020, or one whose bullets are
+    # all in the other language — it is the only evidence left, and without it
+    # the letter is a greeting and a sign-off.
+    other = [name for name in context.overlap.other[:3] if is_safe(name)]
     if other:
-        paragraphs.append(f"Помимо этого использую: {_enumerate(other)}.")
+        line = words["other"].format(skills=_enumerate(other, words["and"]))
+        if len("\n\n".join((*paragraphs, line))) <= FALLBACK_TARGET_CHARS:
+            paragraphs.append(line)
 
-    paragraphs.append("Готов обсудить детали и ответить на вопросы.")
+    paragraphs.append(words["closing"])
     name = context.profile.name
-    paragraphs.append(f"С уважением, {name}" if name and is_safe(name) else "С уважением")
+    paragraphs.append(
+        words["sign_off"].format(name=name) if name and is_safe(name) else words["sign_off_bare"]
+    )
 
     text = _fit(paragraphs, vacancy.letter_max_length)
     return FallbackLetter(
         text=text,
         # Only the ones the assembled text actually kept: ``_fit`` drops whole
         # paragraphs at a small ceiling, and the skills paragraph is one of them.
-        addressed_skills=tuple(
-            written for skill, written in named if _skill_phrase(skill, written) in text
-        ),
+        addressed_skills=tuple(written for _, written in named if skills and skills in text),
         unnameable_skills=unnameable,
     )
+
+
+def _proofs(context: LetterContext, language: str) -> list[str]:
+    """The proof paragraph, longest first: the top achievements, then fewer.
+
+    Returned as alternatives rather than one paragraph so the caller can take
+    the richest one that still fits :data:`FALLBACK_TARGET_CHARS`.
+    """
+    chosen = _best_achievements(context, language)
+    if not chosen:
+        return []
+    words = PHRASES[language]
+    company = chosen[0].company
+    lead = (
+        words["proofs"].format(company=company)
+        if company and is_safe(company)
+        else words["proofs_no_company"]
+    )
+    # One employer per paragraph: "At A, I:" over a bullet from B would
+    # attribute B's work to A, which is the invention this letter must not make.
+    same = [item for item in chosen if item.company == chosen[0].company]
+    return [
+        "\n".join((lead, *(f"• {item.text}" for item in same[:count])))
+        for count in range(len(same), 0, -1)
+    ]
+
+
+def _best_achievements(context: LetterContext, language: str) -> list[AchievementFact]:
+    """Up to :data:`FALLBACK_PROOFS` achievements, most relevant first.
+
+    Relevance is counted, not judged: how many of the matched requirements the
+    bullet names under either spelling, then whether it carries a figure. The
+    resume's own order breaks ties, which puts the newest job's first bullet
+    ahead — the owner's own choice of what to lead with.
+    """
+    wanted = [
+        name
+        for skill in context.overlap.matched
+        for name in {skill.required_as, skill.possessed_as}
+        if name.strip()
+    ]
+
+    def score(item: AchievementFact) -> tuple[int, int]:
+        lowered = item.text.casefold()
+        hits = sum(1 for name in wanted if name.casefold() in lowered)
+        return (hits, 1 if any(char.isdigit() for char in item.text) else 0)
+
+    usable = [
+        item
+        for item in context.profile.achievements
+        if is_safe(item.text) and text_language(item.text, default=language) == language
+    ]
+    ranked = sorted(
+        enumerate(usable),
+        key=lambda pair: (-score(pair[1])[0], -score(pair[1])[1], pair[0]),
+    )
+    return [item for _, item in ranked[:FALLBACK_PROOFS]]
 
 
 def _nameable(
@@ -632,35 +801,22 @@ def _nameable(
     return named, tuple(unnameable)
 
 
-def _opening(title: str | None, company: str | None) -> str:
+def _opening(title: str | None, company: str | None, language: str) -> str:
     """The sentence naming what is being applied for."""
+    if language == "en":
+        role = f"the {title} role" if title else "this role"
+        where = f" at {company}" if company else ""
+        return f"I'm applying for {role}{where}."
     position = f"вакансия «{title}»" if title else "ваша вакансия"
     where = f" в компании {company}" if company else ""
     return f"Меня заинтересовала {position}{where}."
 
 
-def _skill_phrase(skill: MatchedSkill, spelling: str) -> str:
-    """One matched skill with its depth, when the profile knows it."""
-    if skill.years is not None and skill.years >= 1:
-        return f"{spelling} ({_years_in_russian(int(skill.years))})"
-    return spelling
-
-
-def _years_in_russian(years: int) -> str:
-    """Years in the grammatical case Russian requires: 1 год, 3 года, 5 лет."""
-    tail, hundred = years % 10, years % 100
-    if tail == 1 and hundred != 11:
-        return f"{years} год"
-    if tail in (2, 3, 4) and hundred not in (12, 13, 14):
-        return f"{years} года"
-    return f"{years} лет"
-
-
-def _enumerate(values: list[str]) -> str:
-    """A Russian list: commas, and "и" before the last item."""
+def _enumerate(values: list[str], conjunction: str) -> str:
+    """A list in prose: commas, and the conjunction before the last item."""
     if len(values) == 1:
         return values[0]
-    return f"{', '.join(values[:-1])} и {values[-1]}"
+    return f"{', '.join(values[:-1])} {conjunction} {values[-1]}"
 
 
 def _fit(paragraphs: list[str], max_length: int) -> str:
