@@ -23,6 +23,24 @@ has one item per value. Both are ordinary ways to write a skills section, and a
 counter that understood only one of them would report 1 for the other and stop
 a letter for a rule the document actually keeps.
 
+**One section, several names.** A rule is written once, in the owner's words,
+and the documents it is measured against are in two languages: «в навыках не
+меньше 21 пункта» has to find ``КЛЮЧЕВЫЕ НАВЫКИ`` in a Russian CV and
+``SKILLS`` in an English one. So the standard CV sections have a small table of
+names (:data:`SECTION_ALIASES`), and a rule naming any of them finds a heading
+spelled as any other. A name outside the table still has to match exactly, and
+an exact match always wins over an alias.
+
+**A label is not always a heading.** ``Стек: Python, FastAPI`` under a job is a
+line of that job, not the start of a section called «Стек», and reading it as
+one cut the experience section of every generated CV in half. The same goes for
+the labelled lines a skills section is written in — ``Backend: FastAPI,
+Django`` — which the CV renderer prints (``app.documents.skill_groups``). The
+labels that only ever introduce a line inside a section (:data:`INLINE_LABELS`)
+are left in the body, whatever case the rest of the line is in, and a skills
+line's values are counted one by one: «в навыках не меньше 21 пункта» counts
+skills, not the lines they are grouped on.
+
 What this deliberately does not do is parse structure the way a resume parser
 would. It answers "how many things are listed under this heading", which is what
 a rule can ask, and it answers it the same way every time so that a person can
@@ -64,6 +82,75 @@ _BOLD_LINE = re.compile(r"^\*\*(?P<text>.+?)\*\*$")
 #: Everything that carries no meaning when two spellings of one heading are
 #: compared: case, surrounding whitespace, the markers, the trailing colon.
 _HEADING_NOISE = re.compile(r"[\s:*#_\-–—]+")
+
+
+#: The standard CV sections and the names each is written under, in both
+#: languages, already folded by :func:`fold_heading`. A rule and a heading that
+#: land in the same group are the same section.
+SECTION_ALIASES: tuple[frozenset[str], ...] = (
+    frozenset(
+        {
+            "навыки",
+            "ключевыенавыки",
+            "профессиональныенавыки",
+            "техническиенавыки",
+            "skills",
+            "keyskills",
+            "technicalskills",
+        }
+    ),
+    frozenset(
+        {
+            "опыт",
+            "опытработы",
+            "experience",
+            "workexperience",
+            "professionalexperience",
+            "employment",
+        }
+    ),
+    frozenset({"осебе", "summary", "profile", "about", "aboutme"}),
+    frozenset({"образование", "education"}),
+    frozenset({"языки", "знаниеязыков", "languages"}),
+    frozenset({"проекты", "projects"}),
+)
+
+#: The labels of a CV's skill lines, folded. Must hold every label in
+#: ``app.documents.skill_groups.LABELS``; a test compares the two, since this
+#: module may not import that one (the documents package imports the workshop).
+SKILL_GROUP_LABELS = frozenset(
+    {
+        "programming",
+        "backend",
+        "llm&ai",
+        "frontend",
+        "data&infrastructure",
+        "tools&testing",
+        "other",
+        "языкипрограммирования",
+        "бэкенд",
+        "llmиии",
+        "фронтенд",
+        "данныеиинфраструктура",
+        "инструментыитесты",
+        "другое",
+    }
+)
+
+#: Labels that introduce one line inside a section rather than a section,
+#: folded: a job's stack line, and the skill lines above.
+INLINE_LABELS = (
+    frozenset({"стек", "stack", "techstack", "технологии", "technologies"}) | SKILL_GROUP_LABELS
+)
+
+
+def _inline_label(line: str) -> str | None:
+    """The folded label of a "Label: values" line whose label is inline, or None."""
+    head, colon, tail = line.strip().partition(":")
+    if not colon or not tail.strip() or len(head.split()) > MAX_HEADING_WORDS:
+        return None
+    folded = fold_heading(head)
+    return folded if folded in INLINE_LABELS else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +232,8 @@ def _split_heading_line(line: str) -> tuple[str, str] | None:
     if not tail:
         return None
     heading = _heading_text(f"{head.strip()}:")
+    if heading is not None and fold_heading(heading) in INLINE_LABELS:
+        return None
     return (heading, tail) if heading else None
 
 
@@ -165,13 +254,20 @@ def sections_of(document: str) -> tuple[Section, ...]:
             found.append(Section(heading=heading, items=items_of(body), body="\n".join(body)))
 
     for line in lines:
+        if _inline_label(line) is not None:
+            # A stack or skills line: part of the section it sits in, even when
+            # its values are all capitals ("Stack: AWS, GCP") and would
+            # otherwise read as a heading of their own.
+            if heading is not None:
+                body.append(line)
+            continue
         inline = _split_heading_line(line)
         if inline is not None:
             close()
             heading, body = inline[0], [inline[1]]
             continue
         announced = _heading_text(line)
-        if announced is not None:
+        if announced is not None and fold_heading(announced) not in INLINE_LABELS:
             close()
             heading, body = announced, []
             continue
@@ -192,10 +288,22 @@ def find_section(document: str, name: str) -> Section | None:
     wanted = fold_heading(name)
     if not wanted:
         return None
-    for section in sections_of(document):
+    found = sections_of(document)
+    for section in found:
         if fold_heading(section.heading) == wanted:
             return section
+    # No heading spelled the rule's way: try the other names of the same
+    # standard section, so one rule holds for a CV in either language.
+    group = _alias_group(wanted)
+    for section in found:
+        if fold_heading(section.heading) in group:
+            return section
     return None
+
+
+def _alias_group(folded: str) -> frozenset[str]:
+    """The names of the standard section ``folded`` is one of, or nothing."""
+    return next((group for group in SECTION_ALIASES if folded in group), frozenset())
 
 
 def items_of(lines: list[str]) -> tuple[str, ...]:
@@ -203,11 +311,23 @@ def items_of(lines: list[str]) -> tuple[str, ...]:
 
     One item per non-empty line, except when the body is a single line holding
     separated values — then one item per value. The single-line test is what
-    makes ``Python, Go, SQL`` three items and a one-sentence paragraph one.
+    makes ``Python, Go, SQL`` three items and a one-sentence paragraph one. A
+    labelled skills line (``Backend: FastAPI, Django``) is always counted by its
+    values, so grouping a skills section does not change its count.
     """
     filled = [line.strip() for line in lines if line.strip()]
     if not filled:
         return ()
+
+    if any(_inline_label(line) in SKILL_GROUP_LABELS for line in filled):
+        items: list[str] = []
+        for line in filled:
+            if _inline_label(line) in SKILL_GROUP_LABELS:
+                values = _INLINE_SEPARATORS.split(line.partition(":")[2])
+                items.extend(value.strip() for value in values if value.strip())
+            else:
+                items.append(_BULLET.sub("", line).strip())
+        return tuple(items)
 
     if len(filled) == 1:
         parts = [part.strip(" \t·") for part in _INLINE_SEPARATORS.split(filled[0])]

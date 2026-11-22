@@ -45,6 +45,13 @@ nothing after it all mean the same thing: `end` is `null` and `is_current` is
 - `work_periods[].stack` — technologies the resume attributes to *that job*.
   This is what makes per-skill experience calculable, so keep it accurate
   rather than complete.
+- `work_periods[].achievements` — the bullet points (or sentences) the resume
+  lists under *that job*: what the candidate built, changed or delivered there.
+  **Copy each one word for word**, in the resume's order and in the resume's
+  language — do not shorten, merge, translate, fix grammar or add numbers. Drop
+  only the bullet glyph itself. One string per bullet. A plain duty list
+  ("разработка API") counts too: record what is written. If the job has no
+  bullets or description, use `[]`. Never move a bullet from one job to another.
 - `work_periods[].domains` — the industry, in lowercase English: `fintech`,
   `e-commerce`, `edtech`, `gamedev`, `healthcare`, `logistics`, `govtech`,
   `adtech`, `telecom`, `gambling`, `outsourcing`. Omit rather than force-fit.

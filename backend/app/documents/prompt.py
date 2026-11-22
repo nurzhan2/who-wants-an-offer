@@ -29,7 +29,7 @@ The prompt itself lives in ``app/llm/prompts/tailored_cv.md``, per docs/ENGINEER
 this module only fills it in.
 """
 
-from app.documents.context import MAX_SUMMARY_CHARS, CVContext
+from app.documents.context import MAX_BULLETS_PER_JOB, MAX_SUMMARY_CHARS, CVContext
 from app.documents.guard import MIN_SKILLS
 from app.letters.context import LetterContext, clip_description
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN, defang, overlap_block, vacancy_block
@@ -93,7 +93,7 @@ def skills_block(context: CVContext) -> str:
                 f"{skill.years:g} years" if skill.years is not None else None,
                 skill.level or None,
                 f'resume writes it "{skill.spelling}"'
-                if skill.spelling.lower() != skill.canonical_name.lower()
+                if skill.spelling != skill.canonical_name
                 else None,
             )
             if part
@@ -103,13 +103,18 @@ def skills_block(context: CVContext) -> str:
 
 
 def experience_block(context: CVContext) -> str:
-    """Every job, by ref, with the stack the resume attributed to it.
+    """Every job, by ref, with its stack and its numbered achievements.
 
     Company, title and dates are printed here so the model can judge relevance
     and order. They are *not* fields it fills in: the answer carries a ref, and
     the renderer reads these strings from the database. Showing them is what
     lets an arrangement be sensible; not accepting them back is what makes it
     honest.
+
+    The achievements are shown in full and numbered, because choosing the most
+    relevant bullet needs its text and the answer can only name a number. The
+    numbering is the stored list's own order, so index 2 here is index 2 in the
+    row the renderer reads.
     """
     if not context.experience:
         return "(the profile records no jobs)"
@@ -126,6 +131,11 @@ def experience_block(context: CVContext) -> str:
             lines.append("    stack: none recorded, so this job shows no technologies")
         if entry.domains:
             lines.append(f"    domains: {', '.join(entry.domains)}")
+        if entry.achievements:
+            lines.append("    achievements (choose by index; printed exactly as written):")
+            lines.extend(f"      [{index}] {text}" for index, text in enumerate(entry.achievements))
+        else:
+            lines.append("    achievements: none recorded, so choose no bullets for this job")
     return "\n".join(lines)
 
 
@@ -152,6 +162,7 @@ def variables(context: CVContext, *, feedback: str = "") -> dict[str, str]:
     return {
         "cv_language": context.language,
         "max_summary_chars": str(MAX_SUMMARY_CHARS),
+        "max_bullets": str(MAX_BULLETS_PER_JOB),
         "min_skills": str(MIN_SKILLS),
         "candidate_facts": candidate_block(context),
         "skills_block": skills_block(context),

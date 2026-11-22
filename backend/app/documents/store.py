@@ -120,6 +120,7 @@ async def load_experience(session: AsyncSession, profile_id: UUID) -> tuple[Expe
                 "is_current": row.is_current,
                 "stack": row.stack,
                 "domains": row.domains,
+                "achievements": row.achievements,
             }
             for row in rows
         ]

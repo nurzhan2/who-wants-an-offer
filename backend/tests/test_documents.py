@@ -85,7 +85,7 @@ from app.documents.generator import (
 )
 from app.documents.guard import CVProblem
 from app.documents.prompt import variables
-from app.documents.render import CVArrangement
+from app.documents.render import CVArrangement, JobChoice
 from app.documents.service import write_cv
 from app.letters.context import ProfileFacts, SkillFact, VacancyFacts
 from app.llm import prompts
@@ -353,7 +353,9 @@ def test_the_model_is_given_no_field_for_a_company_a_title_or_a_date() -> None:
     per_skill = set(DraftSkill.model_fields)
 
     assert top_level == {"headline", "summary", "skills", "experience"}
-    assert per_job == {"ref", "stack"}
+    # ``bullets`` is a list of integers: which stored bullets, never their text.
+    assert per_job == {"ref", "stack", "bullets"}
+    assert DraftJob.model_fields["bullets"].annotation == list[int]
     assert per_skill == {"canonical_name", "shown_as"}
     forbidden = {"company", "title", "start", "end", "dates", "level", "years", "description"}
     assert not (top_level | per_job | per_skill) & forbidden
@@ -374,13 +376,13 @@ def test_company_title_and_dates_come_from_the_rows_not_from_the_answer() -> Non
             SkillChoice(canonical_name=skill.canonical_name, shown_as=skill.spelling)
             for skill in context.profile.skills
         ),
-        experience=((1, ("Python",)),),
+        experience=(JobChoice(ref=1, stack=("Python",)),),
     )
 
     text = render.to_text(arrangement, context)
 
     assert "Python Developer — Пиксель-Мираж" in text
-    assert "02.2021 — 03.2023" in text
+    assert "февраль 2021 – март 2023" in text
     assert "Chocofamily" not in text
 
 
@@ -408,9 +410,13 @@ def test_a_current_job_is_dated_the_way_the_auditor_recognises() -> None:
 
     current, past = jobs()
 
-    assert render_period(current) == "04.2023 — по настоящее время"
-    assert render_period(past) == "02.2021 — 03.2023"
-    assert len(DATE_TOKEN.findall(f"{render_period(current)} {render_period(past)}")) >= 2
+    assert render_period(current, "ru") == "апрель 2023 – настоящее время"
+    assert render_period(past, "ru") == "февраль 2021 – март 2023"
+    assert render_period(current, "en") == "Apr 2023 – Present"
+    assert render_period(past, "en") == "Feb 2021 – Mar 2023"
+    for language in ("ru", "en"):
+        periods = f"{render_period(current, language)} {render_period(past, language)}"
+        assert len(DATE_TOKEN.findall(periods)) >= 3
 
 
 # ── the checked half ──────────────────────────────────────────────────
@@ -503,7 +509,7 @@ def test_a_technology_moved_between_employers_is_rejected() -> None:
     """
     context = cv_context()
 
-    problems = guard.check_experience(((1, ("Python", "Redis")),), context)
+    problems = guard.check_experience((JobChoice(ref=1, stack=("Python", "Redis")),), context)
 
     assert CVProblem.STACK_NOT_FROM_THAT_JOB in problems
 
@@ -513,7 +519,9 @@ def test_a_job_s_stack_may_be_narrowed_which_is_what_tailoring_a_cv_is() -> None
     """Dropping what does not matter for this vacancy is allowed and expected."""
     context = cv_context()
 
-    assert guard.check_experience(((0, ("Python", "PostgreSQL")),), context) == []
+    assert (
+        guard.check_experience((JobChoice(ref=0, stack=("Python", "PostgreSQL")),), context) == []
+    )
 
 
 @pytest.mark.unit
@@ -521,7 +529,7 @@ def test_a_reference_to_a_job_that_does_not_exist_is_rejected() -> None:
     """A ref outside the offered list is a job invented out of nothing."""
     context = cv_context()
 
-    assert CVProblem.UNKNOWN_EXPERIENCE in guard.check_experience(((7, ()),), context)
+    assert CVProblem.UNKNOWN_EXPERIENCE in guard.check_experience((JobChoice(ref=7),), context)
 
 
 @pytest.mark.unit
@@ -622,8 +630,8 @@ def test_the_fallback_keeps_every_job_in_the_resume_s_own_order() -> None:
 
     arrangement = compose_fallback(context)
 
-    assert [ref for ref, _ in arrangement.experience] == [0, 1]
-    assert arrangement.experience[0][1] == context.experience[0].stack
+    assert [job.ref for job in arrangement.experience] == [0, 1]
+    assert arrangement.experience[0].stack == context.experience[0].stack
 
 
 @pytest.mark.unit
@@ -844,7 +852,7 @@ def test_a_repeated_job_is_collapsed_so_a_career_is_not_misrepresented() -> None
 
     arrangement = to_arrangement(draft, context)
 
-    assert [ref for ref, _ in arrangement.experience] == [0]
+    assert [job.ref for job in arrangement.experience] == [0]
 
 
 @pytest.mark.unit
@@ -1739,3 +1747,603 @@ def test_a_letter_s_score_still_explains_itself_from_its_findings() -> None:
 
     assert report.score == 100 - sum(finding.penalty for finding in report.findings)
     assert not set(report.checks_run) & review.NOT_ABOUT_A_LETTER
+
+
+# ── achievements: chosen by index, printed verbatim ───────────────────
+#
+# Added with migration 0020. The CV the owner rejected showed each job as a
+# title and a stack line; these are the tests that the bullets now arrive, that
+# they arrive as the resume wrote them, and that an arrangement cannot point at
+# a bullet that does not exist.
+
+#: Four bullets per job, synthetic. The figures are what the number check on
+#: the summary reads; the technologies are what relevance is judged by.
+CURRENT_BULLETS = (
+    "Built an order-routing service on FastAPI and PostgreSQL handling 1,200 requests per second.",
+    "Cut p95 latency of the checkout API from 840 ms to 210 ms by adding Redis caching.",
+    "Moved 14 cron jobs to a queue with retries, ending weekly manual reruns.",
+    "Wrote the onboarding guide used by 6 new engineers.",
+)
+PAST_BULLETS = (
+    "Containerised 9 legacy services with Docker and cut deploy time from 40 to 8 minutes.",
+    "Automated Linux server provisioning for 30 client projects.",
+    "Maintained a Python ETL that loaded 2 million rows nightly.",
+    "Reviewed pull requests for a team of 5.",
+)
+
+
+def achieving_jobs(**overrides: Any) -> tuple[ExperienceEntry, ...]:
+    """The two jobs of :func:`jobs`, each with four recorded bullets."""
+    current, past = jobs()
+    return (
+        current.model_copy(update={"achievements": overrides.get("current", CURRENT_BULLETS)}),
+        past.model_copy(update={"achievements": overrides.get("past", PAST_BULLETS)}),
+    )
+
+
+def english_vacancy(**overrides: Any) -> VacancyFacts:
+    """A remote posting written in English, so the CV is English."""
+    values: dict[str, Any] = {
+        "title": "Backend Engineer (Python)",
+        "company": "Northwind",
+        "city": None,
+        "description": "We build payment APIs in Python with FastAPI and PostgreSQL. Remote.",
+        "key_skills": ("Python", "PostgreSQL", "Kubernetes"),
+    }
+    values.update(overrides)
+    return vacancy_facts(**values)
+
+
+def english_context(**overrides: Any) -> Any:
+    """A CV context whose every stored string is English, for the label tests."""
+    profile = profile_facts(
+        name="Alex Doe",
+        summary="Backend engineer building payment APIs in Python and FastAPI.",
+        locations=("Almaty",),
+        skills=tuple(
+            skill.model_copy(update={"spelling": "PostgreSQL"})
+            if skill.canonical_name == "postgresql"
+            else skill
+            for skill in profile_facts().skills
+        ),
+    )
+    current, past = achieving_jobs()
+    entries = (current, past.model_copy(update={"company": "Pixel Mirage"}))
+    return cv_context(
+        vacancy=overrides.get("vacancy", english_vacancy()),
+        profile=overrides.get("profile", profile),
+        contacts=contact_block(name="Alex Doe", city="Алматы"),
+        experience=overrides.get("experience", entries),
+        education=(
+            EducationEntry(
+                institution="KazNU", degree="BSc", field="Computer Science", end_year=2021
+            ),
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_bullets_are_printed_verbatim_in_the_order_the_arrangement_chose() -> None:
+    """The model names indices; the document carries the stored strings."""
+    context = cv_context(experience=achieving_jobs())
+    arrangement = compose_fallback(context).model_copy(
+        update={"experience": (JobChoice(ref=0, stack=("Python",), bullets=(1, 0)),)}
+    )
+
+    text = render.to_text(arrangement, context)
+
+    assert f"• {CURRENT_BULLETS[1]}" in text
+    assert f"• {CURRENT_BULLETS[0]}" in text
+    assert text.index(CURRENT_BULLETS[1]) < text.index(CURRENT_BULLETS[0])
+    assert CURRENT_BULLETS[2] not in text
+    assert inspect(arrangement, context) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("index", [4, 17, -1])
+def test_an_achievement_index_the_job_does_not_have_is_rejected(index: int) -> None:
+    """An index past the list, or a negative one, is a bullet nobody wrote."""
+    context = cv_context(experience=achieving_jobs())
+
+    problems = guard.check_experience((JobChoice(ref=0, bullets=(0, index)),), context)
+
+    assert CVProblem.UNKNOWN_ACHIEVEMENT in problems
+
+
+@pytest.mark.unit
+def test_the_same_achievement_twice_is_rejected_and_not_quietly_repaired() -> None:
+    """A repeated index is the model misreading the record, so the retry is told.
+
+    ``to_arrangement`` deduplicates refs but passes bullet indices through as
+    given: repairing them there would hide the mistake from the check.
+    """
+    context = cv_context(experience=achieving_jobs())
+    draft = full_draft(experience=[DraftJob(ref=0, stack=["Python"], bullets=[2, 2])])
+
+    arrangement = to_arrangement(draft, context)
+
+    assert arrangement.experience[0].bullets == (2, 2)
+    assert CVProblem.REPEATED_ACHIEVEMENT in inspect(arrangement, context)
+
+
+@pytest.mark.unit
+def test_more_bullets_than_a_job_may_show_is_rejected() -> None:
+    """Six bullets of one job is a duty list, and the second job off the page."""
+    from app.documents.context import MAX_BULLETS_PER_JOB
+
+    many = tuple(f"Shipped release number {index}." for index in range(MAX_BULLETS_PER_JOB + 2))
+    context = cv_context(experience=achieving_jobs(current=many))
+
+    problems = guard.check_experience(
+        (JobChoice(ref=0, bullets=tuple(range(MAX_BULLETS_PER_JOB + 1))),), context
+    )
+
+    assert CVProblem.TOO_MANY_ACHIEVEMENTS in problems
+
+
+@pytest.mark.unit
+def test_an_arrangement_that_shows_no_achievement_at_all_is_rejected() -> None:
+    """Titles and stacks only is the document the owner called garbage."""
+    context = cv_context(experience=achieving_jobs())
+
+    problems = guard.check_experience(
+        (JobChoice(ref=0, stack=("Python",)), JobChoice(ref=1)), context
+    )
+
+    assert CVProblem.NO_ACHIEVEMENTS_SHOWN in problems
+
+
+@pytest.mark.unit
+async def test_a_model_that_keeps_pointing_at_missing_bullets_gets_the_fallback() -> None:
+    """Two bad answers, then the rule-based CV — which carries the bullets."""
+    context = cv_context(experience=achieving_jobs())
+    bad = full_draft(experience=[DraftJob(ref=0, stack=["Python"], bullets=[9])])
+    router = FakeRouter(bad, bad)
+
+    result = await generate(context, router=router)
+
+    assert result.source == "fallback"
+    assert CVProblem.UNKNOWN_ACHIEVEMENT in result.rejected_for
+    assert "indices listed under that job" in router.calls[1]["feedback"]
+    assert CURRENT_BULLETS[0] in result.text
+
+
+@pytest.mark.unit
+def test_the_fallback_shows_every_achievement_in_the_resume_s_own_order() -> None:
+    """No judgement about relevance: the owner's order, up to the ceiling."""
+    context = cv_context(experience=achieving_jobs())
+
+    arrangement = compose_fallback(context)
+    text = render.to_text(arrangement, context)
+
+    assert [job.bullets for job in arrangement.experience] == [(0, 1, 2, 3), (0, 1, 2, 3)]
+    positions = [text.index(bullet) for bullet in (*CURRENT_BULLETS, *PAST_BULLETS)]
+    assert positions == sorted(positions)
+    assert inspect(arrangement, context) == []
+
+
+@pytest.mark.unit
+def test_the_fallback_caps_the_bullets_of_older_jobs_harder() -> None:
+    """Older roles earn fewer lines, the way a person compresses a CV by hand."""
+    from app.documents.context import MAX_BULLETS_OLDER_JOB, MAX_BULLETS_PER_JOB
+
+    many = tuple(f"Delivered project number {index}." for index in range(8))
+    entries = tuple(
+        ExperienceEntry(ref=index, company=f"Company {index}", title="Developer", achievements=many)
+        for index in range(3)
+    )
+
+    arrangement = compose_fallback(cv_context(experience=entries))
+
+    assert [len(job.bullets) for job in arrangement.experience] == [
+        MAX_BULLETS_PER_JOB,
+        MAX_BULLETS_PER_JOB,
+        MAX_BULLETS_OLDER_JOB,
+    ]
+
+
+@pytest.mark.unit
+def test_a_summary_with_a_number_the_profile_never_recorded_is_rejected() -> None:
+    """The model's one sentence of prose may quote a result, never round one."""
+    context = cv_context(experience=achieving_jobs())
+
+    invented = guard.check_summary("Python backend, about 1,500 requests per second.", context)
+    quoted = guard.check_summary("Python backend handling 1,200 requests per second.", context)
+    russian = guard.check_summary("Бэкенд на Python: p95 с 840 до 210 мс.", context)
+
+    assert CVProblem.UNSUPPORTED_NUMBER in invented
+    assert CVProblem.UNSUPPORTED_NUMBER not in quoted
+    assert CVProblem.UNSUPPORTED_NUMBER not in russian
+
+
+@pytest.mark.unit
+def test_a_number_spelled_the_other_language_s_way_is_the_same_number() -> None:
+    """ "1 200" and "1,200", "6,1" and "6.1": one figure, two typographies."""
+    from app.letters.context import unsupported_numbers
+
+    evidence = "handling 1,200 requests; latency 6.1 s; since 2023"
+
+    assert unsupported_numbers("1 200 запросов, 6,1 с, с 2023", evidence) == ()
+    assert unsupported_numbers("12k requests", evidence) == ("12",)
+    # A digit inside a name is part of the name, not a claim.
+    assert unsupported_numbers("S3, EC2 and p95", evidence) == ()
+
+
+@pytest.mark.unit
+def test_a_requirement_named_in_a_stored_bullet_is_not_an_invention() -> None:
+    """A bullet printed verbatim must not fail the CV that quotes it.
+
+    Kafka is in the vacancy's list and in no skill row or stack, but the resume
+    says, in the owner's words, that they built something on it.
+    """
+    bullets = (*CURRENT_BULLETS[:3], "Replaced polling with Kafka consumers for 3 services.")
+    context = cv_context(
+        vacancy=vacancy_facts(key_skills=("Python", "Kafka", "Kubernetes")),
+        experience=achieving_jobs(current=bullets),
+    )
+
+    arrangement = compose_fallback(context)
+
+    assert "Kafka" in render.to_text(arrangement, context)
+    assert inspect(arrangement, context) == []
+    assert guard.unsupported_mentions("Kubernetes and Kafka", context) == ("Kubernetes",)
+
+
+@pytest.mark.unit
+def test_an_arrangement_stored_before_bullets_existed_still_renders() -> None:
+    """Old versions stay downloadable: ``[ref, [stack]]`` reads as a job without bullets."""
+    context = cv_context(experience=achieving_jobs())
+
+    arrangement = CVArrangement.model_validate(
+        {"headline": "Backend Developer", "experience": [[0, ["Python"]]]}
+    )
+
+    assert arrangement.experience == (JobChoice(ref=0, stack=("Python",)),)
+    assert "Chocofamily" in render.to_text(arrangement, context)
+    assert CVArrangement.model_validate(arrangement.model_dump(mode="json")) == arrangement
+
+
+# ── language: every label in the posting's language ───────────────────
+
+
+@pytest.mark.unit
+def test_an_english_cv_has_english_headings_and_no_russian_label() -> None:
+    """The first generated CV had «О себе:» and «Стек:» over English text.
+
+    With every stored string English, the whole document must be: a Cyrillic
+    character anywhere would be a label this module wrote in the wrong
+    language. The city is the one fact written the English way on purpose.
+    """
+    context = english_context()
+    assert context.language == "en"
+
+    text = render.to_text(compose_fallback(context), context)
+
+    for heading in ("SUMMARY", "SKILLS", "EXPERIENCE", "EDUCATION", "LANGUAGES"):
+        assert f"\n{heading}\n" in text
+    assert "Stack: " in text
+    assert "Apr 2023 – Present" in text
+    assert "Feb 2021 – Mar 2023" in text
+    assert "Russian (native) · English (B2)" in text
+    assert "Almaty" in text
+    assert not any("Ѐ" <= char <= "ӿ" for char in text), text
+
+
+@pytest.mark.unit
+def test_a_russian_cv_has_russian_headings_and_russian_dates() -> None:
+    """The other half: a Russian posting gets a Russian frame."""
+    context = cv_context(experience=achieving_jobs())
+    assert context.language == "ru"
+
+    text = render.to_text(compose_fallback(context), context)
+
+    for heading in ("О СЕБЕ", "КЛЮЧЕВЫЕ НАВЫКИ", "ОПЫТ РАБОТЫ", "ОБРАЗОВАНИЕ", "ЯЗЫКИ"):
+        assert f"\n{heading}\n" in text
+    assert "апрель 2023 – настоящее время" in text
+    assert "Стек: " in text
+    assert "Русский — родной · Английский — B2" in text
+    for english in ("SUMMARY", "SKILLS", "EXPERIENCE", "Stack:", "Present"):
+        assert english not in text
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_the_headings_are_found_by_the_workshop_and_by_the_auditor(language: str) -> None:
+    """Two readers depend on these headings, in either language.
+
+    The workshop finds a section by the owner's own word — «навыки» — whatever
+    the document calls it; the stack line under a job is not a section; and
+    the audit, which reads the file, finds all three standard sections.
+    """
+    from app.workshop.sections import find_section
+
+    context = english_context() if language == "en" else cv_context(experience=achieving_jobs())
+    arrangement = compose_fallback(context)
+    text = render.to_text(arrangement, context)
+
+    skills = find_section(text, "навыки")
+    experience = find_section(text, "опыт работы")
+    assert skills is not None and len(skills.items) == len(arrangement.skills)
+    assert experience is not None
+    assert any(CURRENT_BULLETS[0] == item for item in experience.items)
+    assert any(PAST_BULLETS[0] == item for item in experience.items), "cut by the stack line"
+    assert find_section(text, "стек") is None
+    assert find_section(text, "skills") is not None
+
+    report = review.audit_file(render.to_docx(arrangement, context), filename="cv.docx")
+    assert set(report.sections_detected) == {"experience", "education", "skills"}
+    assert report.is_machine_readable
+
+
+@pytest.mark.unit
+def test_the_file_is_a4_with_real_bullets_and_says_what_the_text_says() -> None:
+    """The layout, and the contract that the file and the text are one document."""
+    import io
+
+    import docx
+
+    context = english_context()
+    arrangement = compose_fallback(context)
+    document = docx.Document(io.BytesIO(render.to_docx(arrangement, context)))
+
+    section = document.sections[0]
+    assert round(section.page_width.cm, 1) == render.PAGE_WIDTH_CM
+    assert round(section.left_margin.cm, 1) == render.MARGIN_SIDE_CM
+    paragraphs = [paragraph for paragraph in document.paragraphs if paragraph.text]
+    assert [paragraph.text for paragraph in paragraphs] == [
+        line for line in render.to_text(arrangement, context).splitlines() if line
+    ]
+    name = paragraphs[0]
+    assert name.runs[0].bold and name.runs[0].font.size.pt == render.SIZE_NAME
+    bullet = next(p for p in paragraphs if p.text.startswith(render.BULLET))
+    assert bullet.paragraph_format.first_line_indent.cm < 0
+    entry = next(p for p in paragraphs if p.text.startswith("Backend Developer — "))
+    assert entry.runs[0].bold
+    assert "\t" in entry.text and entry.text.endswith("Present")
+    assert document.tables == []
+
+
+@pytest.mark.unit
+def test_the_prompt_numbers_each_job_s_achievements_for_the_model() -> None:
+    """The model can only answer with an index, so it is shown which is which."""
+    rendered = prompts.render("tailored_cv", **variables(cv_context(experience=achieving_jobs())))
+
+    assert f"[0] {CURRENT_BULLETS[0]}" in rendered
+    assert f"[3] {PAST_BULLETS[3]}" in rendered
+    assert "`bullets`" in rendered
+
+
+async def test_achievements_are_stored_and_read_back_for_both_documents(
+    db_session: AsyncSession, profiles: ProfileRepository
+) -> None:
+    """The column, the CV's reader and the letter's reader, against the schema."""
+    from app.letters import store as letter_store
+
+    profile_id = await make_profile(profiles)
+    await profiles.replace_experience(
+        profile_id,
+        [
+            ExperienceCreate(
+                position=0,
+                company="Chocofamily",
+                title="Backend Developer",
+                start="2023-04",
+                is_current=True,
+                achievements=list(CURRENT_BULLETS),
+            ),
+            ExperienceCreate(position=1, company="Пиксель-Мираж", title="Python Developer"),
+        ],
+    )
+
+    jobs_read = await document_store.load_experience(db_session, profile_id)
+    facts = await letter_store.load_profile_facts(db_session, profile_id)
+
+    assert jobs_read[0].achievements == CURRENT_BULLETS
+    assert jobs_read[1].achievements == ()
+    assert facts is not None
+    assert [item.text for item in facts.achievements] == list(CURRENT_BULLETS)
+    assert {item.company for item in facts.achievements} == {"Chocofamily"}
+
+
+# ── the shape of the references: grouped skills, a two-line header ────
+
+
+@pytest.mark.unit
+def test_skills_are_printed_on_labelled_lines_in_the_arrangement_s_order() -> None:
+    """The research's references group skills; a comma dump is what was rejected.
+
+    The vacancy's requirements come first in the arrangement, so their lines
+    come first; a lone language leads the backend line instead of standing on
+    a line of its own.
+    """
+    from app.documents import skill_groups
+
+    choices = [
+        ("python", "Python"),
+        ("postgresql", "PostgreSQL"),
+        ("rag", "RAG"),
+        ("fastapi", "FastAPI"),
+        ("docker", "Docker"),
+        ("pytest", "pytest"),
+        ("figma", "Figma"),
+        ("anthropic api", "Anthropic API"),
+    ]
+
+    lines = skill_groups.grouped(choices, "en")
+
+    assert lines == [
+        ("Backend", ["Python", "FastAPI"]),
+        ("Data & Infrastructure", ["PostgreSQL", "Docker"]),
+        ("LLM & AI", ["RAG", "Anthropic API"]),
+        ("Tools & Testing", ["pytest", "Figma"]),
+    ]
+    assert skill_groups.grouped(choices[:3], "en") is None, "too few to be worth labels"
+
+
+@pytest.mark.unit
+def test_every_skill_line_label_is_known_to_the_workshop() -> None:
+    """The renderer's labels and the section reader's list are one contract.
+
+    A label the workshop does not know would be read as a section heading of its
+    own, and «в навыках не меньше 21 пункта» would count the first line only.
+    """
+    from app.documents.skill_groups import LABELS
+    from app.workshop.sections import SKILL_GROUP_LABELS, fold_heading
+
+    for labels in LABELS.values():
+        for label in labels.values():
+            assert fold_heading(label) in SKILL_GROUP_LABELS, label
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_grouped_skills_are_still_counted_one_by_one(language: str) -> None:
+    """Grouping changes where a skill is printed, never how many there are."""
+    from app.workshop.sections import find_section
+
+    context = english_context() if language == "en" else cv_context(experience=achieving_jobs())
+    arrangement = compose_fallback(context)
+    text = render.to_text(arrangement, context)
+    section = find_section(text, "навыки")
+
+    assert section is not None
+    assert ":" in section.body, "the section is grouped"
+    assert sorted(section.items) == sorted(skill.shown_as for skill in arrangement.skills)
+
+
+@pytest.mark.unit
+def test_a_stack_line_in_capitals_is_not_a_heading() -> None:
+    """ "Stack: AWS, GCP" is all capitals after the label and still a job's line."""
+    from app.workshop.sections import find_section
+
+    text = "EXPERIENCE\nDeveloper — Acme\n• Built a thing.\nStack: AWS, GCP\nDeveloper — Beta\n"
+
+    section = find_section(text, "experience")
+
+    assert section is not None
+    assert "Developer — Beta" in section.items
+
+
+@pytest.mark.unit
+def test_the_header_says_where_which_hours_and_which_format() -> None:
+    """ "Almaty, Kazakhstan (UTC+5) · Open to remote", as the references open.
+
+    The country and offset are the city's geography, not a claim about the
+    candidate; the work format is the profile's own and is printed only when
+    the resume states it. Links are bare addresses and Telegram a handle, so no
+    "Label:" sits in the header.
+    """
+    remote = english_context().profile.model_copy(update={"remote": "full"})
+    context = english_context(profile=remote)
+
+    lines = render.to_text(compose_fallback(context), context).splitlines()
+
+    assert lines[2] == "Almaty, Kazakhstan (UTC+5) · Open to remote"
+    assert lines[3] == ("nurzhan@example.com · +7 701 234 56 78 · github.com/nurzhan")
+    russian = cv_context(
+        profile=profile_facts(remote="hybrid"),
+        contacts=contact_block(links=(("Telegram", "t.me/some_handle"),)),
+    )
+    header = render.to_text(compose_fallback(russian), russian).splitlines()
+    assert header[2] == "Алматы, Казахстан (UTC+5) · гибрид"
+    assert header[3].endswith("· Telegram @some_handle")
+
+
+@pytest.mark.unit
+def test_a_city_this_module_does_not_know_is_printed_as_stored() -> None:
+    """Nothing is added to a place the table cannot vouch for."""
+    context = english_context()
+    context = context.model_copy(
+        update={"contacts": context.contacts.model_copy(update={"city": "Springfield"})}
+    )
+
+    assert "\nSpringfield\n" in render.to_text(compose_fallback(context), context)
+
+
+@pytest.mark.unit
+def test_a_summary_that_is_a_list_of_technologies_is_rejected() -> None:
+    """The rejected CV's summary was a comma dump; sentences pass."""
+    context = cv_context(experience=achieving_jobs())
+
+    dump = guard.check_summary("Python, FastAPI, PostgreSQL, Redis, Docker, Linux, Git", context)
+    prose = guard.check_summary(
+        "Python backend developer building order services on FastAPI and PostgreSQL; "
+        "cut checkout p95 from 840 ms to 210 ms.",
+        context,
+    )
+
+    assert CVProblem.SUMMARY_IS_A_LIST in dump
+    assert CVProblem.SUMMARY_IS_A_LIST not in prose
+
+
+@pytest.mark.unit
+def test_the_fallback_drops_a_profile_summary_that_is_a_list() -> None:
+    """Better no summary than the one the owner called garbage."""
+    profile = profile_facts(summary="Python, FastAPI, PostgreSQL, Docker, Redis, Git, Linux")
+
+    assert compose_fallback(cv_context(profile=profile)).summary == ""
+
+
+@pytest.mark.unit
+def test_the_fallback_drops_a_summary_in_the_other_language() -> None:
+    """A Russian paragraph under SUMMARY is the mixed document the owner rejected."""
+    context = english_context(profile=profile_facts(summary="Бэкенд на Python и FastAPI."))
+
+    assert compose_fallback(context).summary == ""
+
+
+# ── one page ──────────────────────────────────────────────────────────
+
+
+def _long_jobs() -> tuple[ExperienceEntry, ...]:
+    """Three jobs with long bullets: more than an A4 page holds."""
+    text = (
+        "Delivered a change to the order service that cut processing time for {n} internal "
+        "users and documented the rollout for the whole team."
+    )
+    return tuple(
+        ExperienceEntry(
+            ref=index,
+            company=f"Company {index}",
+            title="Backend Developer",
+            start=f"202{4 - index}-01",
+            end=None if index == 0 else f"202{5 - index}-01",
+            is_current=index == 0,
+            achievements=tuple(text.format(n=10 * index + bullet) for bullet in range(6)),
+        )
+        for index in range(3)
+    )
+
+
+@pytest.mark.unit
+def test_a_cv_too_long_for_a_page_loses_the_oldest_job_s_last_bullets_first() -> None:
+    """The compression a person does: the oldest role shrinks before the newest."""
+    from app.documents.generator import fit_to_page
+
+    context = cv_context(experience=_long_jobs())
+    full = CVArrangement(
+        headline="Backend Developer",
+        skills=compose_fallback(context).skills,
+        experience=tuple(JobChoice(ref=index, bullets=(0, 1, 2, 3, 4)) for index in range(3)),
+    )
+    assert not render.fits_one_page(full, context)
+
+    fitted = fit_to_page(full, context)
+
+    assert render.fits_one_page(fitted, context)
+    bullets = [job.bullets for job in fitted.experience]
+    assert bullets[0] == (0, 1, 2, 3, 4), "the newest job is untouched"
+    assert len(bullets[2]) < len(bullets[1]) or len(bullets[2]) == 1
+    for job in bullets:
+        assert job == tuple(range(len(job))), "only the last bullets are dropped"
+
+
+@pytest.mark.unit
+def test_the_rule_based_cv_fits_a_page_even_for_a_long_career() -> None:
+    """The fallback is fitted too, so the owner never gets a page and three lines."""
+    context = cv_context(experience=_long_jobs())
+
+    arrangement = compose_fallback(context)
+
+    assert render.fits_one_page(arrangement, context)
+    assert all(len(job.bullets) >= 1 for job in arrangement.experience)

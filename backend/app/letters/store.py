@@ -28,6 +28,7 @@ from app.db.models import (
     Application,
     CandidateProfile,
     Match,
+    ProfileExperience,
     ProfileSkill,
     Vacancy,
     VacancySkill,
@@ -38,6 +39,7 @@ from app.db.seed_rows import seed_only
 from app.letters import channel
 from app.letters.channel import SourceScope
 from app.letters.context import (
+    AchievementFact,
     ProfileFacts,
     SkillFact,
     VacancyFacts,
@@ -127,7 +129,13 @@ async def load_vacancy_facts(session: AsyncSession, vacancy_id: UUID) -> Vacancy
 async def load_profile_facts(
     session: AsyncSession, profile_id: UUID | None = None
 ) -> ProfileFacts | None:
-    """The candidate the letters are for: the named profile, or the default one."""
+    """The candidate the letters are for: the named profile, or the default one.
+
+    With every job's achievement bullets (since migration 0020), read by one
+    more explicit query: the letter's proofs are the owner's own results, and a
+    letter that could only list technologies is the one the owner called
+    useless. The CV reads the same rows through ``app.documents.store``.
+    """
     if profile_id is None:
         profile = await session.scalar(
             select(CandidateProfile)
@@ -147,6 +155,17 @@ async def load_profile_facts(
             .order_by(ProfileSkill.canonical_name)
         )
     ).all()
+    jobs = (
+        await session.execute(
+            select(
+                ProfileExperience.company,
+                ProfileExperience.title,
+                ProfileExperience.achievements,
+            )
+            .where(ProfileExperience.profile_id == profile.id)
+            .order_by(ProfileExperience.position)
+        )
+    ).all()
 
     return ProfileFacts(
         profile_id=profile.id,
@@ -158,6 +177,14 @@ async def load_profile_facts(
         locations=tuple(str(item) for item in profile.locations),
         languages=_languages(profile.languages),
         skills=tuple(_skill_fact(skill) for skill in skills),
+        remote=profile.remote_pref.value if profile.remote_pref else None,
+        achievements=tuple(
+            AchievementFact(company=job.company, title=job.title, text=text.strip())
+            for job in jobs
+            # JSONB, last written by an extraction: checked, not trusted.
+            for text in (job.achievements if isinstance(job.achievements, list) else [])
+            if isinstance(text, str) and text.strip()
+        ),
     )
 
 

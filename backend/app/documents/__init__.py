@@ -14,14 +14,16 @@
 
 **What "generating a CV" means here, exactly.** It means reordering the
 candidate's skills and jobs so what this vacancy asks for comes first, choosing
-which jobs and which of each job's technologies to show, spelling a skill the
-way the vacancy spells it when it is the same skill, and fitting the result to
-the length rules. It does not mean writing prose about what somebody did at a
-job, because the profile does not record that and anything written there would
-be invented.
+which jobs, which of each job's technologies and which of each job's recorded
+achievement bullets to show and in what order, spelling a skill the way the
+vacancy spells it when it is the same skill, writing a two-sentence summary,
+and fitting the result to the length rules. It does not mean writing prose about
+what somebody did at a job: the bullets are the resume's own (stored verbatim
+since migration 0020), chosen by index and printed as written, and anything a
+model wrote there instead would be invented.
 
 That distinction is why the model returns an *arrangement* — references, orders,
-names from a closed list — rather than a document. Company names, job titles,
+indices, names from a closed list — rather than a document. Company names, job titles,
 dates, skill levels and years are read from the database when the file is built
 and there is no field in the model's answer that could carry a different one. So
 "the generator does not change dates, companies or titles" is a fact about the
@@ -48,7 +50,7 @@ from app.documents.context import (
 )
 from app.documents.generator import CVDraft, CVUnwritableError, GeneratedCV, generate
 from app.documents.guard import MIN_SKILLS, CVProblem, unsupported_mentions
-from app.documents.render import CVArrangement, to_docx, to_text
+from app.documents.render import CVArrangement, JobChoice, to_docx, to_text
 from app.documents.review import DocumentReview, RequirementCoverage, ReviewedDocument
 from app.documents.service import DocumentOutcome, write_cover_letter, write_cv
 
@@ -67,6 +69,7 @@ __all__ = [
     "EducationEntry",
     "ExperienceEntry",
     "GeneratedCV",
+    "JobChoice",
     "RequirementCoverage",
     "ReviewedDocument",
     "SkillChoice",

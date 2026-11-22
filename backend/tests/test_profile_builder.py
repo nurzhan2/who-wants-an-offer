@@ -898,3 +898,73 @@ async def test_a_text_upload_is_sent_as_text(
     call = provider.calls[0]
     assert call["documents"] == ()
     assert call["variables"]["resume_text"] == "Опыт работы: 2 года."
+
+
+# ── achievements (migration 0020) ─────────────────────────────────────
+
+
+def test_a_job_s_bullets_are_kept_verbatim_minus_the_bullet_glyph() -> None:
+    """The only things done to a bullet are the ones that are not the author's.
+
+    The glyph and a list number are layout; a line break inside a bullet is the
+    PDF's wrapping; a bullet read twice off a two-column page is one bullet. The
+    words and the figures are untouched — "3.5x" keeps its 3.
+    """
+    period = WorkPeriod(
+        company="Acme",
+        title="Backend Engineer",
+        achievements=[
+            "• Cut p95 latency from 840 ms to 210 ms.",
+            "2) Moved 14 cron jobs to a queue",
+            "3.5x faster imports after\n   batching inserts.",
+            "  ",
+            "- Cut p95 latency from 840 ms to 210 ms.",
+        ],
+    )
+
+    rows = profile_builder.to_experience(make_extraction(work_periods=[period]))
+
+    assert rows[0].achievements == [
+        "Cut p95 latency from 840 ms to 210 ms.",
+        "Moved 14 cron jobs to a queue",
+        "3.5x faster imports after batching inserts.",
+    ]
+
+
+def test_the_extraction_asks_for_bullets_word_for_word() -> None:
+    """The schema field is a flat list of strings, and the prompt says verbatim."""
+    from app.llm import prompts
+
+    assert WorkPeriod.model_fields["achievements"].annotation == list[str]
+    rendered = prompts.render("extract_profile", today="2026-11-22", resume_text="")
+    assert "Copy each one word for word" in rendered
+
+
+async def test_achievements_extracted_from_a_resume_are_stored_per_job(
+    db_session: AsyncSession, pending_id: UUID, fake_embeddings: None
+) -> None:
+    """From the model's answer to ``profile_experience.achievements``, in order."""
+    from sqlalchemy import select
+
+    from app.db.models import ProfileExperience
+
+    periods = [
+        job("Acme", "2024-01", "2026-11"),
+        job("Freelance", "2022-01", "2023-12"),
+    ]
+    periods[0] = periods[0].model_copy(
+        update={"achievements": ["Shipped a billing API used by 3 teams.", "Wrote its runbook."]}
+    )
+    await build(db_session, pending_id, make_extraction(work_periods=periods))
+
+    rows = (
+        await db_session.scalars(
+            select(ProfileExperience)
+            .where(ProfileExperience.profile_id == pending_id)
+            .order_by(ProfileExperience.position)
+        )
+    ).all()
+    assert [row.achievements for row in rows] == [
+        ["Shipped a billing API used by 3 teams.", "Wrote its runbook."],
+        [],
+    ]

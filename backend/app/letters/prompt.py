@@ -129,8 +129,20 @@ def _company_line(company: str) -> str:
     )
 
 
+#: Most achievements put in a letter's prompt. A letter cites one to three, and
+#: the newest jobs' bullets come first in the stored order, so the ones cut are
+#: the oldest roles' — the least likely proofs for a vacancy posted today.
+MAX_PROMPT_ACHIEVEMENTS = 12
+
+
 def candidate_block(context: LetterContext) -> str:
-    """Everything known about the candidate. There is nothing else."""
+    """Everything known about the candidate. There is nothing else.
+
+    The achievements are the owner's own bullets, quoted with the employer they
+    belong to so a proof is never moved between companies. They are what the
+    letter's proofs are made of, and the only source of any figure it quotes —
+    :func:`app.letters.generator.letter_numbers_unsupported` checks that.
+    """
     profile = context.profile
     lines: list[str] = []
     if profile.name:
@@ -147,6 +159,15 @@ def candidate_block(context: LetterContext) -> str:
         lines.append(f"- Languages: {_join(profile.languages)}")
     if profile.summary:
         lines.append(f"- Summary from the resume: {profile.summary}")
+    if profile.achievements:
+        lines.append(
+            "- Achievements recorded in the resume, verbatim — the only results and "
+            "the only numbers the letter may cite:"
+        )
+        lines.extend(
+            f"  - at {item.company or item.title}: {item.text}"
+            for item in profile.achievements[:MAX_PROMPT_ACHIEVEMENTS]
+        )
     return "\n".join(lines) if lines else "- (the profile records nothing but skills)"
 
 
@@ -165,9 +186,9 @@ def overlap_block(context: LetterContext) -> str:
 
     if overlap.missing:
         lines.append(
-            "REQUIRED AND NOT HELD - name these plainly as things the candidate has "
-            "not worked with. Do not claim them, do not imply them, do not describe "
-            "them as 'familiar' or 'basic':"
+            "REQUIRED AND NOT HELD - the candidate has not worked with these. Do not "
+            "claim them, do not imply them, do not describe them as 'familiar' or "
+            "'basic', and do not mention them at all — gaps are not volunteered:"
         )
         lines.extend(f"  - {name}" for name in overlap.missing)
     else:

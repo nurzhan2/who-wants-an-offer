@@ -8,8 +8,9 @@ two kinds of wrong answer the letter generator distinguishes:
   :class:`CVDraft` and feeds the validator's own message back;
 * **the wrong content**, which is this module's business, and which here means
   an arrangement that names a skill the profile has not got, renames one skill
-  into another, refers to a job that does not exist, or attributes a technology
-  to an employer the resume never connected it to.
+  into another, refers to a job that does not exist, attributes a technology
+  to an employer the resume never connected it to, picks a bullet the job does
+  not have, or writes a summary with a figure nobody recorded.
 
 The second check is code reading the answer and then code reading the finished
 document, never an instruction in the prompt. The prompt does say all of it —
@@ -19,7 +20,8 @@ when it fails.
 
 **The fallback is a real CV, not a stub.** ``compose_fallback`` arranges the same
 document from the context alone: skills ordered by the vacancy's own requirement
-list first, jobs in the order the resume gave them, each job's whole recorded
+list first, jobs in the order the resume gave them, each job's achievements in
+the resume's own order up to the per-job ceiling, each job's whole recorded
 stack, the profile's own summary. It is not tailored beyond that ordering, and
 that is the entire difference between it and a model's answer — the facts are
 identical, because in both cases the facts come from the database. A person can
@@ -51,14 +53,16 @@ from app.db.enums import RuleScope
 from app.documents import guard
 from app.documents import prompt as prompt_builder
 from app.documents.context import (
+    MAX_BULLETS_OLDER_JOB,
+    MAX_BULLETS_PER_JOB,
     MAX_EXPERIENCE_ENTRIES,
-    MAX_SUMMARY_CHARS,
+    RECENT_JOBS,
     CVContext,
     SkillChoice,
 )
 from app.documents.guard import CVProblem
-from app.documents.render import CVArrangement, to_text
-from app.letters.context import fold
+from app.documents.render import CVArrangement, JobChoice, fits_one_page, to_text
+from app.letters.context import fold, text_language
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN
 from app.llm import usage as usage_ledger
 from app.llm.base import LLMTask, LLMUsage
@@ -131,12 +135,19 @@ class DraftSkill(BaseModel):
 
 
 class DraftJob(BaseModel):
-    """One job in the model's answer: which job, and which of its technologies."""
+    """One job in the model's answer: which job, its technologies, its bullets.
+
+    ``bullets`` are indices into the job's achievement list as the prompt shows
+    it, most relevant first. Integers and nothing else: the text of a bullet is
+    the owner's, and a field that could carry text is a field a model would
+    eventually use to improve one.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     ref: int
     stack: list[str] = Field(default_factory=list)
+    bullets: list[int] = Field(default_factory=list)
 
 
 class CVDraft(BaseModel):
@@ -144,9 +155,9 @@ class CVDraft(BaseModel):
 
     Worth reading as a list of what a model is *able* to say, because that is
     the design. There is no company field, no title field, no date field, no
-    level field and no per-job description: not because a model would fill them
-    in badly, but so that the question of whether it filled them in badly never
-    arises.
+    level field and no bullet text — a job's bullets are chosen by index — not
+    because a model would fill them in badly, but so that the question of
+    whether it filled them in badly never arises.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -201,6 +212,12 @@ def to_arrangement(draft: CVDraft, context: CVContext) -> CVArrangement:
     reads worse than one that names it once. Duplicate refs are collapsed for a
     stronger reason — the same job printed twice is a document that misrepresents
     a career, and it is the sort of thing nobody notices in review.
+
+    Bullet indices are passed through untouched, duplicates and all. An index
+    that is out of range or repeated is a mistake about the candidate's record,
+    not about formatting, and :func:`app.documents.guard.check_experience`
+    rejects it so the retry is told; repairing it here would hide the fact that
+    the model misread which bullets exist.
     """
     skills: list[SkillChoice] = []
     seen_skills: set[str] = set()
@@ -212,13 +229,19 @@ def to_arrangement(draft: CVDraft, context: CVContext) -> CVArrangement:
         shown = item.shown_as.strip() or item.canonical_name.strip()
         skills.append(SkillChoice(canonical_name=item.canonical_name.strip(), shown_as=shown))
 
-    jobs: list[tuple[int, tuple[str, ...]]] = []
+    jobs: list[JobChoice] = []
     seen_refs: set[int] = set()
     for job in draft.experience:
         if job.ref in seen_refs:
             continue
         seen_refs.add(job.ref)
-        jobs.append((job.ref, tuple(name.strip() for name in job.stack if name.strip())))
+        jobs.append(
+            JobChoice(
+                ref=job.ref,
+                stack=tuple(name.strip() for name in job.stack if name.strip()),
+                bullets=tuple(job.bullets),
+            )
+        )
 
     return CVArrangement(
         headline=draft.headline.strip(),
@@ -247,7 +270,7 @@ def inspect(arrangement: CVArrangement, context: CVContext) -> list[CVProblem]:
     if arrangement.headline and arrangement.headline not in context.allowed_headlines:
         problems.append(CVProblem.HEADLINE_NOT_SUPPORTED)
     problems.extend(guard.check_skills(arrangement.skills, context))
-    problems.extend(guard.check_experience(arrangement.shown_experience, context))
+    problems.extend(guard.check_experience(arrangement.experience, context))
     problems.extend(guard.check_summary(arrangement.summary, context))
 
     text = to_text(arrangement, context)
@@ -314,7 +337,7 @@ async def generate(
             break
 
         usages.append(usage_ledger.record(result.usage))
-        arrangement = to_arrangement(result.value, context)
+        arrangement = fit_to_page(to_arrangement(result.value, context), context)
         problems = inspect(arrangement, context)
         broken = workshop_rules.hard(
             workshop_rules.check(to_text(arrangement, context), scope=RuleScope.CV, rules=rules)
@@ -404,6 +427,12 @@ def _feedback(problems: Sequence[CVProblem], broken: Sequence[RuleViolation]) ->
     return "\n".join(part for part in parts if part)
 
 
+#: Most skills the rule-based CV lists. The research's range is 8 to 25 (C3);
+#: past that the section is the resume's whole vocabulary rather than a list an
+#: employer reads, and the ones cut are the last of the unrequested.
+MAX_FALLBACK_SKILLS = 25
+
+
 def compose_fallback(context: CVContext) -> CVArrangement:
     """An arrangement built from the context alone, with no model involved.
 
@@ -411,8 +440,12 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     vacancy asked for come first, in the vacancy's own order and under the
     vacancy's own spelling, and everything else follows in the order the profile
     holds it. Jobs stay in the resume's order — reverse chronological, as they
-    were written — and each shows its whole recorded stack, because narrowing a
-    stack is a judgement about relevance and this branch makes no judgements.
+    were written — and each shows its whole recorded stack and its achievements
+    in the order the resume listed them, up to :data:`app.documents.context.
+    MAX_BULLETS_PER_JOB` for the two most recent jobs and :data:`app.documents.
+    context.MAX_BULLETS_OLDER_JOB` for older ones. Choosing *which* bullets
+    matter for this vacancy is a judgement, and this branch makes none; the
+    owner's own order is the one a person chose.
 
     The vacancy's spelling is used for a matched skill here, and that is not a
     liberty: ``matched`` means the fold keys agree, so the two strings are two
@@ -421,10 +454,11 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     which is why it is the piece this branch keeps.
 
     The summary is the profile's own, and only when it passes the same check the
-    model's would: it was written by a person about themselves, but it is prose,
-    and prose is where an unsupported claim lives. A summary that names a
-    requirement the profile does not record is dropped rather than the document
-    being failed — nothing is lost, since the same words are already in the
+    model's would and is written in the CV's language: it was written by a
+    person about themselves, but it is prose, and prose is where an unsupported
+    claim lives — and a Russian paragraph under ``SUMMARY`` is the mixed-language
+    document the owner rejected. Either way it is dropped rather than the
+    document failed; nothing is lost, since the same words are already in the
     resume the owner uploaded.
     """
     by_key = {fold(skill.canonical_name): skill for skill in context.profile.skills}
@@ -444,12 +478,67 @@ def compose_fallback(context: CVContext) -> CVArrangement:
             skills.append(SkillChoice(canonical_name=skill.canonical_name, shown_as=skill.spelling))
 
     summary = (context.profile.summary or "").strip()
-    if len(summary) > MAX_SUMMARY_CHARS or guard.unsupported_mentions(summary, context):
+    if (
+        guard.check_summary(summary, context)
+        or text_language(summary, default=context.language) != context.language
+    ):
         summary = ""
 
-    return CVArrangement(
+    arrangement = CVArrangement(
         headline=context.allowed_headlines[0] if context.allowed_headlines else "",
         summary=summary,
-        skills=tuple(skills),
-        experience=tuple((entry.ref, entry.stack) for entry in context.experience),
+        skills=tuple(skills[:MAX_FALLBACK_SKILLS]),
+        experience=tuple(
+            JobChoice(
+                ref=entry.ref,
+                stack=entry.stack,
+                bullets=tuple(
+                    range(
+                        min(
+                            len(entry.achievements),
+                            MAX_BULLETS_PER_JOB
+                            if position < RECENT_JOBS
+                            else MAX_BULLETS_OLDER_JOB,
+                        )
+                    )
+                ),
+            )
+            for position, entry in enumerate(context.experience)
+        ),
     )
+    return fit_to_page(arrangement, context)
+
+
+#: The fewest bullets trimming leaves a job with: two for a recent role, which
+#: is the research's floor for one (S11, S27), one for an older role.
+MIN_BULLETS_RECENT_JOB = 2
+MIN_BULLETS_OLDER_JOB = 1
+
+
+def fit_to_page(arrangement: CVArrangement, context: CVContext) -> CVArrangement:
+    """The arrangement with bullets dropped, oldest job first, until it fits a page.
+
+    A person fitting a CV to one page compresses the oldest role first and the
+    least relevant line of it first, and this does the same: it removes the last
+    bullet of the job furthest down the page, one at a time, re-measuring with
+    :func:`app.documents.render.estimated_lines` after each, and never takes a
+    recent job below :data:`MIN_BULLETS_RECENT_JOB` or an older one below
+    :data:`MIN_BULLETS_OLDER_JOB`. "Last" is the arrangement's own order: for a
+    model's answer that is its least relevant choice, for the rule-based one the
+    resume's last bullet.
+
+    Only bullets are ever removed, so nothing can be added to a document by
+    fitting it, and a profile too large to fit even at the floors is returned at
+    the floors rather than refused — a CV that runs a few lines long is a
+    formatting fault, not a reason to hand over nothing.
+    """
+    jobs = list(arrangement.experience)
+    current = arrangement
+    for index in range(len(jobs) - 1, -1, -1):
+        floor = MIN_BULLETS_RECENT_JOB if index < RECENT_JOBS else MIN_BULLETS_OLDER_JOB
+        while not fits_one_page(current, context) and len(jobs[index].bullets) > floor:
+            jobs[index] = jobs[index].model_copy(update={"bullets": jobs[index].bullets[:-1]})
+            current = arrangement.model_copy(update={"experience": tuple(jobs)})
+        if fits_one_page(current, context):
+            break
+    return current
