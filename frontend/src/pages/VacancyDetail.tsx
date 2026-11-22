@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import { href } from '@/app/routes'
 import { fileUrl } from '@/api/documents'
@@ -8,6 +8,7 @@ import { Button, Card, Empty, Failure, Field, Loading, Pill, Score, Section } fr
 import { useDocumentHistory, useGenerateDocument } from '@/hooks/useDocuments'
 import { useVacancy, useWriteLetter } from '@/hooks/queries'
 import { useFlash } from '@/hooks/useMotion'
+import { explain } from '@/lib/errors'
 import { count, date, dateTime, plural, salary, score } from '@/lib/format'
 import { EVIDENCE, outcomeLabel, REMOTE, REQUIREMENT_SOURCE, SKIPPED } from '@/lib/labels'
 import type { ManualApply, MatchSummary, RequirementStanding, VacancySource } from '@/types/api'
@@ -46,6 +47,7 @@ export function VacancyDetail({ id }: { id: string }) {
 
   const { vacancy, match, requirements, letter } = data
   const description = vacancy.description_md ?? vacancy.description_raw
+  const hasLetter = letter !== null && letter.characters > 0
 
   return (
     <div className="rise">
@@ -53,9 +55,9 @@ export function VacancyDetail({ id }: { id: string }) {
         ← ко всем вакансиям
       </a>
 
-      <header className="mb-section mt-6 flex flex-wrap items-start justify-between gap-6 border-b border-hairline pb-8">
+      <header className="mb-section mt-6 grid gap-6 border-b border-hairline pb-8 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div className="min-w-0">
-          <h1 className="text-title font-light">{vacancy.title}</h1>
+          <h1 className="break-words text-heading font-light sm:text-title">{vacancy.title}</h1>
           <p className="mt-3 text-small text-muted">
             {vacancy.company ?? 'без компании'} · {vacancy.city ?? 'без города'} ·{' '}
             {REMOTE[vacancy.remote]} · {salary(vacancy.salary_min, vacancy.salary_max, vacancy.currency)}
@@ -74,62 +76,90 @@ export function VacancyDetail({ id }: { id: string }) {
       </header>
 
       <Section
-        title="Документы"
-        note="Сначала письмо, потом «Откликнуться…»: откроется карточка целиком — письмо, оценка, предупреждения hh. Подтверждённый отклик отправит агент на вашем компьютере."
+        title="Отклик"
+        note="Три шага: письмо, CV по желанию, подтверждение. Отправит агент на вашем компьютере."
       >
-        <div className="flex flex-wrap items-center gap-4">
-          <ApplyConfirm vacancyId={id} />
-          <Button
-            outline
-            busy={write.isPending ? 'Пишем письмо — до минуты…' : false}
-            done={letterWritten ? 'Письмо записано' : false}
-            onClick={() => {
-              write.mutate({ vacancyId: id, force: letter !== null && letter.characters > 0 })
-            }}
+        <ol className="grid gap-px border border-hairline bg-hairline md:grid-cols-3">
+          <Step
+            position={1}
+            title="Письмо"
+            status={
+              letter !== null && hasLetter
+                ? `${count(letter.characters)} ${plural(letter.characters, 'знак', 'знака', 'знаков')}${
+                    letter.sent_at ? `, отправлено ${date(letter.sent_at)}` : ', не отправлено'
+                  }${letter.outcome ? ` · ${outcomeLabel(letter.outcome) ?? ''}` : ''}`
+                : 'ещё не написано'
+            }
           >
-            {letter !== null && letter.characters > 0 ? 'Переписать письмо' : 'Написать письмо'}
-          </Button>
-          <Button
-            outline
-            busy={cv.isPending ? 'Собираем CV…' : false}
-            done={cvBuilt ? 'CV собран' : false}
-            onClick={() => {
-              cv.mutate(id)
-            }}
+            <Button
+              outline={hasLetter}
+              busy={write.isPending ? 'Пишем — до минуты…' : false}
+              done={letterWritten ? 'Письмо записано' : false}
+              onClick={() => {
+                write.mutate({ vacancyId: id, force: hasLetter })
+              }}
+            >
+              {hasLetter ? 'Переписать письмо' : 'Написать письмо'}
+            </Button>
+            {write.data ? (
+              <p className="mt-3 text-small">
+                {write.data.saved
+                  ? `Письмо сохранено: ${count(write.data.characters)} ${plural(write.data.characters, 'знак', 'знака', 'знаков')}, ${
+                      write.data.from_model ? 'написала модель' : 'собрано по правилам, без модели'
+                    }.`
+                  : (SKIPPED[write.data.skipped ?? ''] ?? 'Ничего не записано.')}
+              </p>
+            ) : null}
+            {write.isError ? (
+              <p className="mt-3 text-small font-semibold" role="alert">
+                Не удалось: {explain(write.error).reason}
+              </p>
+            ) : null}
+          </Step>
+          <Step position={2} title="CV под вакансию" status="по желанию">
+            <Button
+              outline
+              busy={cv.isPending ? 'Собираем CV…' : false}
+              done={cvBuilt ? 'CV собран' : false}
+              onClick={() => {
+                cv.mutate(id)
+              }}
+            >
+              Собрать CV
+            </Button>
+            {cv.isError ? (
+              <p className="mt-3 text-small font-semibold" role="alert">
+                Не удалось собрать CV: {cv.error.message}
+              </p>
+            ) : null}
+            {cv.data ? <CvResult document={cv.data} /> : null}
+            <CvVersions vacancyId={id} />
+          </Step>
+          <Step
+            position={3}
+            title="Подтвердить"
+            status={hasLetter ? 'прочитайте письмо и подтвердите' : 'сначала письмо'}
           >
-            CV под эту вакансию
-          </Button>
-          {letter !== null && letter.characters > 0 ? (
-            <span className="text-small text-muted">
-              письмо есть: {count(letter.characters)}{' '}
-              {plural(letter.characters, 'знак', 'знака', 'знаков')}
-              {letter.sent_at ? `, отправлено ${date(letter.sent_at)}` : ', не отправлено'}
-              {letter.outcome ? ` · ${outcomeLabel(letter.outcome) ?? ''}` : ''}
-            </span>
-          ) : (
-            <span className="text-small text-muted">письма ещё нет</span>
-          )}
-        </div>
-        {cv.isError ? (
-          <p className="mt-4 text-small">Не удалось собрать CV: {cv.error.message}</p>
-        ) : null}
-        {cv.data ? <CvResult document={cv.data} /> : null}
-        <CvVersions vacancyId={id} />
-        {write.data ? (
-          <p className="mt-4 text-small">
-            {write.data.saved
-              ? `Письмо сохранено: ${count(write.data.characters)} ${plural(write.data.characters, 'знак', 'знака', 'знаков')}, ${
-                  write.data.from_model ? 'написала модель' : 'собрано по правилам, без модели'
-                }.`
-              : (SKIPPED[write.data.skipped ?? ''] ?? 'Ничего не записано.')}
-          </p>
-        ) : null}
-        {write.isError ? <p className="mt-4 text-small">Не удалось: {String(write.error)}</p> : null}
+            <ApplyConfirm vacancyId={id} outline={!hasLetter} />
+          </Step>
+        </ol>
       </Section>
 
       <Section
         title="Требования"
-        note="Три колонки, а не две. Средняя — то, что у кандидата есть, но в этом резюме не названо: score считает это пробелом, хотя чинится это правкой CV. Строка «выведено из текста описания» значит, что работодатель этого требования не называл — его вычитали из объявления."
+        note="Что из требований вакансии у вас есть, а чего нет."
+        more={
+          <>
+            <p>
+              Средняя колонка — то, что у вас есть, но в этом резюме не названо: оценка считает это
+              пробелом, хотя чинится это правкой CV.
+            </p>
+            <p>
+              «Выведено из текста описания» значит, что работодатель этого требования не называл —
+              его вычитали из объявления.
+            </p>
+          </>
+        }
       >
         <div className="grid gap-6 lg:grid-cols-3">
           <Column
@@ -155,7 +185,7 @@ export function VacancyDetail({ id }: { id: string }) {
 
       {data.manual_apply ? <ManualApplyBlock apply={data.manual_apply} /> : null}
 
-      <Section title="Описание" note="Как его записал коннектор.">
+      <Section title="Описание">
         {description ? (
           <div className="max-w-3xl whitespace-pre-wrap text-body">{description}</div>
         ) : (
@@ -163,6 +193,30 @@ export function VacancyDetail({ id }: { id: string }) {
         )}
       </Section>
     </div>
+  )
+}
+
+/** One step of applying: its number, what it is, where it stands, its button. */
+function Step({
+  position,
+  title,
+  status,
+  children,
+}: {
+  position: number
+  title: string
+  status: string
+  children: ReactNode
+}) {
+  return (
+    <li className="flex min-w-0 flex-col bg-paper p-5">
+      <div className="flex items-baseline gap-3">
+        <span className="tnum text-small text-muted">{String(position).padStart(2, '0')}</span>
+        <span className="font-semibold">{title}</span>
+      </div>
+      <p className="mt-1 text-small text-muted">{status}</p>
+      <div className="mt-4">{children}</div>
+    </li>
   )
 }
 
@@ -264,8 +318,8 @@ function Explanation({ match }: { match: MatchSummary }) {
     ['логистика', match.components.logistics_fit],
   ]
   return (
-    <Section title="Из чего складывается score" note={`посчитано ${dateTime(match.scored_at)}`}>
-      <div className="grid gap-6 sm:grid-cols-3 lg:grid-cols-6">
+    <Section title="Из чего складывается оценка" note={`посчитано ${dateTime(match.scored_at)}`}>
+      <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">
         {parts.map(([label, value]) => (
           <Field key={label} label={label}>
             <span className="tnum text-heading font-light">{score(value)}</span>

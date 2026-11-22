@@ -3,7 +3,7 @@ import { useRef, useState } from 'react'
 import { href } from '@/app/routes'
 import { VacancyDetail } from '@/pages/VacancyDetail'
 import { ImportVacancy } from '@/components/ImportVacancy'
-import { Counted, Empty, Failure, Loading, NextStep, Pill, Score, Section } from '@/components/ui'
+import { Counted, Empty, Failure, Loading, More, NextStep, Pill, Score, Section } from '@/components/ui'
 import { useVacancies, type VacancyQuery } from '@/hooks/queries'
 import { useReorder } from '@/hooks/useMotion'
 import { ago, date, plural, salary, score as formatScore, scoreNumber, wholeNumber } from '@/lib/format'
@@ -74,10 +74,15 @@ export function Vacancies({ selected }: { selected: string | null }) {
 
   return (
     <div className="rise">
-      <ImportVacancy />
       <Section
         title="Вакансии"
-        note={`${MODES[mode].note} У каждой строки — что из требований закрыто, а что нет.`}
+        note="Лучшие совпадения сверху. Откройте вакансию — там письмо, CV и отклик."
+        more={
+          <>
+            <p>Сейчас: {MODES[mode].note}</p>
+            <p>У каждой строки — сколько требований вакансии ваше резюме не закрывает.</p>
+          </>
+        }
         action={
           page.data?.total !== null && page.data?.total !== undefined ? (
             <span className="text-small text-muted" aria-live="polite">
@@ -121,12 +126,11 @@ export function Vacancies({ selected }: { selected: string | null }) {
                     href={href('overview')}
                     className="rounded-pill border border-ink px-6 py-2 text-small transition-colors duration-800 ease-slow hover:bg-ink hover:text-paper"
                   >
-                    К операциям
+                    На «Обзор»
                   </a>
                 }
               >
-                На «Обзоре» нажмите «Собрать вакансии», затем «Пересчитать подбор» — список
-                появится здесь, лучшие сверху.
+                На «Обзоре» нажмите «Запустить цепочку» — она соберёт и оценит вакансии.
               </NextStep>
             ) : (
               <Empty>Под эти фильтры ничего не подходит. Снимите часть условий.</Empty>
@@ -168,6 +172,9 @@ export function Vacancies({ selected }: { selected: string | null }) {
             </>
           )
         ) : null}
+        <div className="mt-section border-t border-hairline pt-6">
+          <ImportVacancy />
+        </div>
       </Section>
     </div>
   )
@@ -245,7 +252,7 @@ function rememberMode(mode: MatchMode): void {
 function ModeSwitch({ mode, onChange }: { mode: MatchMode; onChange: (next: MatchMode) => void }) {
   return (
     <div className="mb-6">
-      <div className="text-micro uppercase text-muted">порядок</div>
+      <div className="text-micro uppercase text-muted">сортировка</div>
       <div
         role="radiogroup"
         aria-label="Порядок списка"
@@ -257,11 +264,18 @@ function ModeSwitch({ mode, onChange }: { mode: MatchMode; onChange: (next: Matc
         <span className="mx-2 hidden h-6 border-l border-hairline sm:inline-block" aria-hidden />
         <ModeButton option="skills" mode={mode} onChange={onChange} />
       </div>
-      <p className="mt-2 max-w-prose text-small text-muted">
-        {mode === 'skills'
-          ? 'Показывает пересечение требований вакансии с навыками профиля, а не пригодность. У вакансий с коротким списком требований завышает. По замеру 17 сентября верх держится на общих инструментах — linux, git, docker, CI/CD, — и в первую двадцатку попали три вакансии Linux-администратора. Вакансии, где требований нет вовсе, — в конце.'
-          : 'Меняется только порядок: состав списка и фильтры те же, ничего не пересчитывается.'}
-      </p>
+      {mode === 'skills' ? (
+        <div className="mt-2 max-w-prose text-small text-muted">
+          <p>Пересечение с навыками, а не пригодность: короткие списки требований завышает.</p>
+          <More>
+            <p>
+              По замеру 17 сентября верх держится на общих инструментах — linux, git, docker,
+              CI/CD, — и в первую двадцатку попали три вакансии Linux-администратора. Вакансии, где
+              требований нет вовсе, — в конце.
+            </p>
+          </More>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -379,7 +393,7 @@ function FilterBar({
         }}
       />
       <NumberField
-        label="score от"
+        label="оценка от"
         value={filters.scoreMin}
         onChange={(scoreMin) => {
           onChange({ scoreMin })
@@ -392,24 +406,20 @@ function FilterBar({
           onChange({ salaryMin })
         }}
       />
-      <label className="flex items-start gap-3 text-small sm:col-span-2 lg:col-span-3">
+      <label className="flex items-center gap-3 self-end py-2 text-small sm:col-span-2 lg:col-span-2">
         <input
           type="checkbox"
           checked={filters.includeUnpriced}
-          className="mt-1 accent-ink"
+          className="accent-ink"
           onChange={(event) => {
             onChange({ includeUnpriced: event.target.checked })
           }}
         />
-        <span>
-          оставлять вакансии без зарплаты
-          <span className="block text-muted">
-            Их пять из шести: hh не требует указывать деньги. Снимите галочку, чтобы спросить
-            другое — «только те, где сумма названа».
-          </span>
+        <span title="Таких пять из шести: hh не требует указывать деньги. Снимите галочку — останутся только вакансии с названной суммой.">
+          показывать вакансии без зарплаты
         </span>
       </label>
-      <div className="flex items-start">
+      <div className="flex items-end py-2">
         <button
           type="button"
           className="text-small text-muted underline-offset-4 hover:underline"
@@ -517,7 +527,7 @@ function Row({ item, mode, index }: { item: VacancyListItem; mode: MatchMode; in
             {item.title}
           </a>
           <span className="text-small text-muted">{item.company ?? 'без компании'}</span>
-          {item.is_applied ? <Pill>в трекере</Pill> : null}
+          {item.is_applied ? <Pill>в откликах</Pill> : null}
           {item.is_seed ? <Pill>тестовая запись</Pill> : null}
         </div>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-small text-muted">

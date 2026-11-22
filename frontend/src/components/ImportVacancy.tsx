@@ -49,7 +49,7 @@ export function ImportVacancy() {
           setOpen(true)
         }}
       >
-        Добавить вакансию вручную
+        Нет нужной вакансии? Добавить по ссылке или тексту
       </button>
     )
   }

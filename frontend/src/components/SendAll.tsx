@@ -73,7 +73,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
 
   return (
     <div
-      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-2 py-4 sm:px-4 sm:py-10"
+      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-2 pt-4 sm:px-4 sm:pt-10"
       style={{ backgroundColor: 'color-mix(in srgb, var(--ink) 55%, transparent)' }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
@@ -85,7 +85,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="sheet w-full max-w-4xl border border-ink bg-paper p-5 text-ink outline-none sm:p-card"
+        className="sheet mb-4 w-full max-w-4xl border border-ink bg-paper p-5 text-ink outline-none sm:mb-10 sm:p-card"
       >
         <div className="mb-6 flex items-baseline justify-between gap-6 border-b border-hairline pb-4">
           <h2 id={titleId} className="text-heading font-semibold">
