@@ -19,6 +19,7 @@ Three deliberate choices worth knowing before adding tests here:
 import asyncio
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
@@ -39,7 +40,7 @@ from app.db.repositories import (
     ProfileRepository,
     VacancyRepository,
 )
-from app.db.session import get_session
+from app.db.session import get_session, get_work_sessions
 from app.main import create_app
 from helpers import alembic_config, maintenance_url
 
@@ -222,7 +223,14 @@ async def async_client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    @asynccontextmanager
+    async def own_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
     app.dependency_overrides[get_session] = override_get_session
+    # Work that outlives a request opens its own session in production; here it
+    # shares the test transaction (app.services.activity).
+    app.dependency_overrides[get_work_sessions] = lambda: own_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.core.logging import get_logger
 from app.db.enums import ParseStatus
 from app.db.models import CandidateProfile
@@ -32,6 +32,7 @@ from app.db.session import session_factory
 from app.llm.router import LLMRouter, get_router
 from app.resume import ats_audit, extractor, profile_builder
 from app.schemas.ats import ATSReport
+from app.services import activity
 from app.services import contacts as contact_service
 
 logger = get_logger(__name__)
@@ -215,6 +216,9 @@ async def parse_in_background(
     into a transaction nobody will commit.
     """
     llm = router or get_router()
+    # Recorded under the card the owner clicked: the replaced profile's id, or
+    # this one's for a new upload (services.activity).
+    item = activity.start("resume", str(replaces or profile_id), path.name)
     try:
         content = await asyncio.to_thread(path.read_bytes)
         document = extractor.extract(content, path.name)
@@ -225,7 +229,12 @@ async def parse_in_background(
             if result.status is ParseStatus.READY:
                 await fill_contacts(session, profile_id)
             await session.commit()
+        if result.status is ParseStatus.READY:
+            activity.finish(item, "резюме разобрано")
+        else:
+            activity.fail(item, AppError(f"разбор не удался: {result.status.value}"))
     except Exception as exc:  # a background task must never die silently
+        activity.fail(item, exc)
         logger.exception(
             "resume.background_failed", profile_id=str(profile_id), error=type(exc).__name__
         )

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 import { ApiError, apiSend, apiUpload } from '@/api/client'
 import { Button, Pill, Section } from '@/components/ui'
+import { elapsed, latestFor, useActivity } from '@/hooks/useActivity'
 import { useFlash } from '@/hooks/useMotion'
 import { useProfiles } from '@/hooks/useProfiles'
 import { explain } from '@/lib/errors'
@@ -383,6 +384,7 @@ function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: () => vo
         </label>
       </header>
 
+      <ReplacementStatus profileId={profile.id} />
       {profile.parse_status === 'failed' && profile.parse_error ? (
         <p className="break-words mt-4 border-l border-ink pl-4 text-small" role="alert">
           <span className="font-semibold">Почему не разобралось: </span>
@@ -534,5 +536,35 @@ function ProfileCard({ profile, onSaved }: { profile: Profile; onSaved: () => vo
         />
       </div>
     </article>
+  )
+}
+
+/**
+ * Where the last file sent for this card got to, from the server's record —
+ * so «Новый файл загружен» does not vanish on a reload with no ending.
+ */
+function ReplacementStatus({ profileId }: { profileId: string }) {
+  const { data } = useActivity()
+  const item = latestFor(data, ['resume'], profileId)
+  if (!item) return null
+  if (item.state === 'running') {
+    return (
+      <p className="mt-4 text-small" role="status">
+        Новый файл «{item.label}» разбирается · {elapsed(item.started_at)}. Можно закрыть страницу —
+        разбор идёт на сервере.
+      </p>
+    )
+  }
+  if (item.state === 'failed') {
+    return (
+      <p className="mt-4 border border-ink p-3 text-small font-semibold" role="alert">
+        Новый файл «{item.label}» не разобрался: {item.detail ?? 'причина в журнале сервера'}.
+      </p>
+    )
+  }
+  return (
+    <p className="mt-4 text-small text-muted">
+      Новый файл «{item.label}» разобран · {elapsed(item.started_at, item.finished_at)}.
+    </p>
   )
 }

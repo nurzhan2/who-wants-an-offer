@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { href, ROUTES, type RouteName } from '@/app/routes'
+import { ActivityBar } from '@/components/ActivityBar'
 import { NoticeBanner } from '@/components/NoticeBanner'
 import { useHealth } from '@/hooks/useHealth'
 import { PARSE_STATUS } from '@/lib/labels'
@@ -68,6 +69,7 @@ export function Shell({
           </ul>
         </nav>
       </header>
+      <ActivityBar />
       <NoticeBanner />
 
       <main key={route} className="rise mx-auto max-w-shell px-4 py-section sm:px-6">

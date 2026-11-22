@@ -4,7 +4,8 @@ Everything here is async by design: there is no sync ``Session`` anywhere in
 the codebase, and ``create_all`` is never called outside tests.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -46,3 +47,14 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def dispose_engine() -> None:
     """Close every pooled connection; called from the application lifespan."""
     await engine.dispose()
+
+
+#: Opens a session of its own, for work that must outlive the request that
+#: started it (``app.services.activity``). A dependency rather than a direct use
+#: of :data:`session_factory` so a test can hand the work its own transaction.
+WorkSessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+def get_work_sessions() -> WorkSessions:
+    """FastAPI dependency: how background work opens its session."""
+    return session_factory

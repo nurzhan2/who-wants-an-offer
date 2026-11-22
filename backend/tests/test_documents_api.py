@@ -25,6 +25,7 @@ generator has its own file.
 """
 
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -38,7 +39,7 @@ from app.core.exceptions import PROBLEM_JSON
 from app.db.base import uuid7
 from app.db.models import VacancySkill
 from app.db.repositories import MatchRepository, ProfileRepository, VacancyRepository
-from app.db.session import get_session
+from app.db.session import get_session, get_work_sessions
 from app.documents import service as document_service
 from app.documents.render import MEDIA_TYPE
 from app.schemas.profile import CandidateProfileCreate, ExperienceCreate, SkillCreate
@@ -59,7 +60,12 @@ async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncC
     async def override_get_session() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    @asynccontextmanager
+    async def own_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_work_sessions] = lambda: own_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         yield http

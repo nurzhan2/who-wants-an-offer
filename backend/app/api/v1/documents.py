@@ -27,10 +27,12 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import DocumentKind, RuleScope
-from app.db.session import get_session
+from app.db.models import Vacancy
+from app.db.session import WorkSessions, get_session, get_work_sessions
 from app.documents import rules, service
 from app.documents import store as document_store
 from app.documents.render import MEDIA_TYPE
@@ -46,8 +48,8 @@ from app.schemas.document import (
     GeneratedDocumentRead,
     RequirementCoverageRead,
 )
+from app.services import activity, profile_choice
 from app.services import documents as documents_service
-from app.services import profile_choice
 from app.services import workshop as workshop_service
 from app.workshop import store as workshop_store
 
@@ -77,6 +79,15 @@ async def _profile(
             detail="No active candidate profile; upload a resume first",
         )
     return profile
+
+
+async def _title(session: AsyncSession, vacancy_id: UUID) -> str:
+    """The vacancy's title, for the activity line the page shows."""
+    return str(await session.scalar(select(Vacancy.title).where(Vacancy.id == vacancy_id)) or "")
+
+
+def _described(outcome: DocumentOutcome) -> str:
+    return "готово" if outcome.document is not None else "не выдано: см. причину на странице"
 
 
 def _to_read(outcome: DocumentOutcome) -> GeneratedDocumentRead:
@@ -127,6 +138,7 @@ def _to_read(outcome: DocumentOutcome) -> GeneratedDocumentRead:
 async def generate_cv(
     vacancy_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    sessions: Annotated[WorkSessions, Depends(get_work_sessions)],
     profile_id: Annotated[UUID | None, Query()] = None,
 ) -> GeneratedDocumentRead:
     """Arrange, check, render, audit and store a CV for this vacancy.
@@ -137,8 +149,17 @@ async def generate_cv(
     to fetch them separately to find out whether the document was withheld.
     """
     profile = await _profile(session, profile_id, vacancy_id)
-    outcome = await service.write_cv(session, vacancy_id, profile)
-    await session.commit()
+
+    async def work() -> DocumentOutcome:
+        # Its own session: the work outlives a reload (see services.activity).
+        async with sessions() as own:
+            outcome = await service.write_cv(own, vacancy_id, profile)
+            await own.commit()
+            return outcome
+
+    outcome = await activity.run(
+        "cv", str(vacancy_id), await _title(session, vacancy_id), work, describe=_described
+    )
     return _to_read(outcome)
 
 
@@ -150,6 +171,7 @@ async def generate_cv(
 async def generate_cover_letter(
     vacancy_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    sessions: Annotated[WorkSessions, Depends(get_work_sessions)],
     profile_id: Annotated[UUID | None, Query()] = None,
 ) -> GeneratedDocumentRead:
     """Write the letter through ``app.letters``, then file, audit and version it.
@@ -159,8 +181,20 @@ async def generate_cover_letter(
     audit and the version history; it does not move the letter anywhere.
     """
     profile = await _profile(session, profile_id, vacancy_id)
-    outcome = await service.write_cover_letter(session, vacancy_id, profile)
-    await session.commit()
+
+    async def work() -> DocumentOutcome:
+        async with sessions() as own:
+            outcome = await service.write_cover_letter(own, vacancy_id, profile)
+            await own.commit()
+            return outcome
+
+    outcome = await activity.run(
+        "cover_letter",
+        str(vacancy_id),
+        await _title(session, vacancy_id),
+        work,
+        describe=_described,
+    )
     return _to_read(outcome)
 
 
@@ -386,6 +420,7 @@ async def write_letter(
     payload: LetterRequest,
     response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
+    sessions: Annotated[WorkSessions, Depends(get_work_sessions)],
 ) -> WorkshopResult:
     """Generate a letter and save it on the tracker row. Never send it.
 
@@ -405,7 +440,20 @@ async def write_letter(
     about this vacancy; that one is about the installation, and it stays true
     for every vacancy until somebody uploads a resume.
     """
-    result = await workshop_service.write(session, payload.vacancy_id, force=payload.force)
+
+    async def work() -> WorkshopResult:
+        async with sessions() as own:
+            return await workshop_service.write(own, payload.vacancy_id, force=payload.force)
+
+    result = await activity.run(
+        "letter",
+        str(payload.vacancy_id),
+        await _title(session, payload.vacancy_id),
+        work,
+        describe=lambda done: (
+            f"письмо: {done.characters} знаков" if done.saved else (done.skipped or "не записано")
+        ),
+    )
     if result.skipped == workshop_service.NO_PROFILE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -12,6 +12,7 @@ shares a namespace whose documented promise is that the token is required.
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    activity,
     applications,
     documents,
     miniapp,
@@ -28,6 +29,7 @@ from app.api.v1 import (
 )
 
 router = APIRouter()
+router.include_router(activity.router)
 router.include_router(resume.router)
 router.include_router(profile.router)
 router.include_router(sources.router)

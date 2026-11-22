@@ -7,6 +7,7 @@ import { Freshness } from '@/components/Freshness'
 import { Button, Card, Empty, Failure, Field, Loading, Pill, Score, Section } from '@/components/ui'
 import { useDocumentHistory, useGenerateDocument } from '@/hooks/useDocuments'
 import { useVacancy, useWriteLetter } from '@/hooks/queries'
+import { latestFor, useActivity } from '@/hooks/useActivity'
 import { useFlash } from '@/hooks/useMotion'
 import { explain } from '@/lib/errors'
 import { count, date, dateTime, plural, salary, score } from '@/lib/format'
@@ -37,6 +38,9 @@ import type { GeneratedDocument } from '@/types/documents'
  */
 export function VacancyDetail({ id }: { id: string }) {
   const { data, isPending, isError, error } = useVacancy(id)
+  const activity = useActivity()
+  const letterRun = latestFor(activity.data, ['letter', 'cover_letter'], id)
+  const cvRun = latestFor(activity.data, ['cv'], id)
   const write = useWriteLetter()
   const cv = useGenerateDocument('cv')
   const letterWritten = useFlash(write.data?.saved ? write.submittedAt : 0)
@@ -93,7 +97,11 @@ export function VacancyDetail({ id }: { id: string }) {
           >
             <Button
               outline={hasLetter}
-              busy={write.isPending ? 'Пишем — до минуты…' : false}
+              busy={
+                write.isPending || letterRun?.state === 'running'
+                  ? 'Пишем — до минуты…'
+                  : false
+              }
               done={letterWritten ? 'Письмо записано' : false}
               onClick={() => {
                 write.mutate({ vacancyId: id, force: hasLetter })
@@ -101,6 +109,11 @@ export function VacancyDetail({ id }: { id: string }) {
             >
               {hasLetter ? 'Переписать письмо' : 'Написать письмо'}
             </Button>
+            {letterRun?.state === 'failed' && !write.isPending ? (
+              <p className="mt-3 text-small font-semibold" role="alert">
+                Последняя попытка не удалась: {letterRun.detail}
+              </p>
+            ) : null}
             {hasLetter && letter.text ? <LetterText text={letter.text} /> : null}
             {write.data ? (
               <p className="mt-3 text-small">
@@ -120,7 +133,7 @@ export function VacancyDetail({ id }: { id: string }) {
           <Step position={2} title="CV под вакансию" status="по желанию">
             <Button
               outline
-              busy={cv.isPending ? 'Собираем CV…' : false}
+              busy={cv.isPending || cvRun?.state === 'running' ? 'Собираем CV…' : false}
               done={cvBuilt ? 'CV собран' : false}
               onClick={() => {
                 cv.mutate(id)
