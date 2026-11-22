@@ -41,8 +41,8 @@ const CREATABLE: RuleKind[] = [
 ]
 
 const FIELD =
-  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-ink focus:border-slate-500 focus:outline-none'
-const LABEL = 'block text-xs font-medium uppercase tracking-wide text-muted'
+  'w-full rounded-field border border-hairline bg-paper px-3 py-2 text-small text-ink outline-none transition-colors focus:border-ink'
+const LABEL = 'block text-label uppercase text-muted'
 
 interface Props {
   busy: boolean
@@ -99,7 +99,7 @@ export function RuleForm({ busy, error, onSubmit }: Props) {
 
   return (
     <form
-      className="space-y-4 rounded-lg border border-slate-200 bg-white p-4"
+      className="space-y-4 border border-hairline p-5 sm:p-6"
       onSubmit={(event) => {
         event.preventDefault()
         onSubmit({ scope, severity, params: params(), message })
@@ -256,12 +256,12 @@ export function RuleForm({ busy, error, onSubmit }: Props) {
       </label>
 
       {error != null && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-ink">
+        <div className="border border-ink p-3 text-small font-semibold">
           <p>{error instanceof Error ? error.message : 'Не удалось сохранить правило'}</p>
           {claims.length > 0 && (
             <p className="mt-2 text-xs">
               Правило описывает форму, а не факты о кандидате. В нём названы навыки, которых нет
-              в профиле: <span className="font-medium">{claims.join(', ')}</span>.
+              в профиле: <span className="font-semibold">{claims.join(', ')}</span>.
             </p>
           )}
         </div>

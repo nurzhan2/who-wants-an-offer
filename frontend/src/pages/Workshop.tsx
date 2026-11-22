@@ -10,8 +10,9 @@
  * mutation invalidates the list it changed. A rule that was refused must never
  * appear in the list because an optimistic update put it there.
  */
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
+import { Section } from '@/components/ui'
 import { PreviewPanel } from '@/components/workshop/PreviewPanel'
 import { ReferenceForm, ReferenceList } from '@/components/workshop/References'
 import { RuleForm } from '@/components/workshop/RuleForm'
@@ -29,15 +30,19 @@ import {
   useVacancyChoices,
 } from '@/hooks/useWorkshop'
 
-function Section({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+/**
+ * The form that adds one, folded until it is wanted: the lists are what the
+ * page is read for, and two open forms above them pushed them off the screen.
+ */
+function AddForm({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-ink">{title}</h2>
-        <p className="mt-1 text-sm text-muted">{hint}</p>
-      </div>
-      {children}
-    </section>
+    <details className="more group">
+      <summary className="press inline-flex cursor-pointer select-none items-center rounded-pill border border-ink px-6 py-2 text-small transition-colors hover:bg-ink hover:text-paper">
+        <span className="group-open:hidden">{label}</span>
+        <span className="hidden group-open:inline">Свернуть форму</span>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
   )
 }
 
@@ -74,59 +79,88 @@ export function Workshop() {
       : null
 
   return (
-    <div className="space-y-10">
+    <div>
       <Section
-        title="Эталоны"
-        hint="Документы, на которые ориентироваться. Из них берут форму — структуру, длину, порядок и тон. Содержание всегда берут только из вашего профиля."
+        title="Правила"
+        note="Требования к письмам и CV. Не выполнено жёсткое правило — текст не выдаётся."
+        more={
+          <>
+            <p>
+              Жёсткие правила проверяются кодом после генерации; мягкие только отмечаются.
+              Правило описывает форму — потребовать написать неправду им нельзя.
+            </p>
+            <p>Встроенные правила выключить нельзя.</p>
+          </>
+        }
       >
-        <ReferenceForm
-          busy={createReference.isPending}
-          error={createReference.error}
-          warnings={createReference.data?.warnings ?? []}
-          onSubmit={(input) => { createReference.mutate(input); }}
-        />
-        {references.isPending && <p className="text-sm text-muted">Загружаем эталоны…</p>}
-        {references.isError && (
-          <p className="text-sm text-ink">Не удалось загрузить эталоны.</p>
-        )}
-        {references.data && (
-          <ReferenceList
-            references={references.data}
-            busyId={referenceBusyId}
-            busyAction={referenceBusyAction}
-            onToggle={(reference) => {
-              updateReference.mutate({
-                id: reference.id,
-                changes: { is_active: !reference.is_active },
-              })
-            }}
-            onDelete={(reference) => { deleteReference.mutate(reference.id); }}
-          />
-        )}
+        <div className="space-y-4">
+          {rules.isPending && <p className="text-small text-muted">Загружаем правила…</p>}
+          {rules.isError && (
+            <p className="text-small font-semibold" role="alert">
+              Не удалось загрузить правила.
+            </p>
+          )}
+          {rules.data && (
+            <RuleList
+              rules={rules.data}
+              busyId={ruleBusyId}
+              busyAction={ruleBusyAction}
+              onToggle={(rule) => {
+                updateRule.mutate({ id: rule.id, changes: { is_active: !rule.is_active } })
+              }}
+              onDelete={(rule) => { deleteRule.mutate(rule.id); }}
+            />
+          )}
+          <AddForm label="Добавить правило">
+            <RuleForm
+              busy={createRule.isPending}
+              error={createRule.error}
+              onSubmit={(payload) => { createRule.mutate(payload); }}
+            />
+          </AddForm>
+        </div>
       </Section>
 
       <Section
-        title="Правила"
-        hint="Проверяемые требования. Жёсткие проверяются кодом после генерации: пока правило не выполнено, текст не отдаётся. Правило описывает форму — потребовать написать неправду им нельзя."
+        title="Эталоны"
+        note="Образцы писем и CV: из них берут форму и тон, но не факты."
+        more={
+          <p>
+            Из эталона берут структуру, длину, порядок и тон. Содержание письма и резюме берут
+            только из вашего профиля — факты из чужого документа не переносятся никогда.
+          </p>
+        }
       >
-        <RuleForm
-          busy={createRule.isPending}
-          error={createRule.error}
-          onSubmit={(payload) => { createRule.mutate(payload); }}
-        />
-        {rules.isPending && <p className="text-sm text-muted">Загружаем правила…</p>}
-        {rules.isError && <p className="text-sm text-ink">Не удалось загрузить правила.</p>}
-        {rules.data && (
-          <RuleList
-            rules={rules.data}
-            busyId={ruleBusyId}
-            busyAction={ruleBusyAction}
-            onToggle={(rule) => {
-              updateRule.mutate({ id: rule.id, changes: { is_active: !rule.is_active } })
-            }}
-            onDelete={(rule) => { deleteRule.mutate(rule.id); }}
-          />
-        )}
+        <div className="space-y-4">
+          {references.isPending && <p className="text-small text-muted">Загружаем эталоны…</p>}
+          {references.isError && (
+            <p className="text-small font-semibold" role="alert">
+              Не удалось загрузить эталоны.
+            </p>
+          )}
+          {references.data && (
+            <ReferenceList
+              references={references.data}
+              busyId={referenceBusyId}
+              busyAction={referenceBusyAction}
+              onToggle={(reference) => {
+                updateReference.mutate({
+                  id: reference.id,
+                  changes: { is_active: !reference.is_active },
+                })
+              }}
+              onDelete={(reference) => { deleteReference.mutate(reference.id); }}
+            />
+          )}
+          <AddForm label="Добавить эталон">
+            <ReferenceForm
+              busy={createReference.isPending}
+              error={createReference.error}
+              warnings={createReference.data?.warnings ?? []}
+              onSubmit={(input) => { createReference.mutate(input); }}
+            />
+          </AddForm>
+        </div>
       </Section>
 
       <PreviewPanel

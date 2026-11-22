@@ -11,7 +11,7 @@
  * for. They are side by side because that comparison is where a rule that does
  * not measure what its author meant becomes visible.
  */
-import { Button } from '@/components/ui'
+import { Button, Pill } from '@/components/ui'
 import { describeRule, SCOPE_LABELS, SEVERITY_LABELS } from '@/components/workshop/labels'
 import type { Rule } from '@/types/workshop'
 
@@ -24,13 +24,9 @@ interface Props {
   onDelete: (rule: Rule) => void
 }
 
+/** A label on a rule: a hairline pill, semibold for a hard one — never a colour. */
 function Badge({ children, tone }: { children: string; tone: 'hard' | 'soft' | 'muted' }) {
-  const tones = {
-    hard: 'bg-amber-100 text-amber-900',
-    soft: 'bg-slate-100 text-muted',
-    muted: 'bg-slate-100 text-muted',
-  }
-  return <span className={`rounded px-1.5 py-0.5 text-xs ${tones[tone]}`}>{children}</span>
+  return <Pill strong={tone === 'hard'}>{children}</Pill>
 }
 
 export function RuleList({ rules, busyId, busyAction, onToggle, onDelete }: Props) {
@@ -43,13 +39,11 @@ export function RuleList({ rules, busyId, busyAction, onToggle, onDelete }: Prop
       {rules.map((rule) => (
         <li
           key={rule.id}
-          className={`rounded-lg border p-3 ${
-            rule.is_active ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50'
-          }`}
+          className={`border border-hairline p-4 ${rule.is_active ? '' : 'text-muted'}`}
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
-              <p className="text-sm font-medium text-ink">{rule.message}</p>
+              <p className="font-semibold">{rule.message}</p>
               <p className="text-sm text-muted">{describeRule(rule.params)}</p>
               <p className="text-xs text-muted">
                 Модель просят так: <span className="font-mono">{rule.asked_as}</span>

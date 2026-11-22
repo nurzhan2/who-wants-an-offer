@@ -1,6 +1,6 @@
 import { ApiError } from '@/api/client'
 import { SendAll } from '@/components/SendAll'
-import { Button, Section } from '@/components/ui'
+import { Button, More, Section } from '@/components/ui'
 import { useSetAside } from '@/hooks/useBatch'
 import { useCompletion, useNow } from '@/hooks/useMotion'
 import { isFinished, useOperations, useStartOperation } from '@/hooks/useOperations'
@@ -35,21 +35,25 @@ export function Autopilot() {
   return (
     <Section
       title="Автопилот"
-      note="Цепочка делает всю подготовку подряд и ничего не отправляет. Отправка начинается только с вашего подтверждения — одного на всю пачку."
+      note="1. Запустите цепочку — она соберёт вакансии и напишет письма, ничего не отправляя. 2. «Отправить все» — прочитайте письма и подтвердите пачку."
       action={<SendAll />}
     >
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <p className="max-w-2xl text-small text-muted">
-            Собрать вакансии → досчитать эмбеддинги → пересчитать подбор → перечитать страницы →
-            написать письма прошедшим отбор → собрать очередь. Идёт долго: замеренный обход hh
-            занимал здесь от часа до трёх, эмбеддинги на процессоре — ещё до получаса. Окно можно
-            закрыть, работа идёт на сервере.
+            Сбор → подбор → письма → очередь. Идёт от часа до трёх на сервере — окно можно закрыть.
           </p>
-          <p className="mt-1 max-w-2xl text-small text-muted">
-            То же самое из терминала: <code>python -m wwao chain</code>. Как запускать её по
-            расписанию — в README.
-          </p>
+          <More>
+            <p>
+              Полностью: собрать вакансии → досчитать эмбеддинги → пересчитать подбор → перечитать
+              страницы → написать письма прошедшим отбор → собрать очередь. Замеренный обход hh
+              занимал от часа до трёх, эмбеддинги на процессоре — ещё до получаса.
+            </p>
+            <p>
+              То же самое из терминала: <code>python -m wwao chain</code>. Как запускать её по
+              расписанию — в README.
+            </p>
+          </More>
           {batch.data ? (
             <p className="mt-3 text-small">
               {ready > 0 ? (
