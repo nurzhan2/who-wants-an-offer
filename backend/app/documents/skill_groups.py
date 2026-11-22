@@ -31,6 +31,8 @@ or skills that all land on one line, are printed as the single plain line they
 always were: a "Other: Excel, Word" block is worse than no label at all.
 """
 
+import re
+
 from app.resume.skills import default_canonicalizer, normalize
 
 #: Below this many skills, one plain line reads better than labelled ones.
@@ -126,11 +128,22 @@ AI_MARKERS: tuple[str, ...] = (
 )
 
 
+def _bare_skill(name: str) -> str:
+    """A skill without its qualifier or version: «PostgreSQL (JSONB, pg_trgm)» →
+    «PostgreSQL», «Java 21» → «Java». The owner's resume writes skills that way,
+    and the dictionary knows the bare name (22 Nov 2026: both landed in Other)."""
+    bare = re.sub(r"\s*\(.*?\)\s*", " ", name)
+    bare = re.sub(r"\s+v?\d+(?:\.\d+)*\s*$", "", bare.strip())
+    return bare.strip()
+
+
 def group_of(name: str) -> str:
     """Which CV line one skill belongs on, from its canonical name or spelling."""
     canonicalizer = default_canonicalizer()
-    canonical = canonicalizer.canonicalize(name)
-    if canonical is not None:
+    for candidate in dict.fromkeys((name, _bare_skill(name))):
+        canonical = canonicalizer.canonicalize(candidate)
+        if canonical is None:
+            continue
         group = canonicalizer.group_of(canonical)
         if group is not None and group in DICTIONARY_GROUPS:
             return DICTIONARY_GROUPS[group]

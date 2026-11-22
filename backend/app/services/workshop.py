@@ -31,6 +31,7 @@ from app.letters.guard import ENGLISH, RUSSIAN
 from app.letters.service import LetterOutcome, write_letter
 from app.llm.router import LLMRouter
 from app.schemas.dashboard import LetterProblemRead, QueuedLetter, WorkshopResult
+from app.services import profile_choice
 
 logger = get_logger(__name__)
 
@@ -118,8 +119,9 @@ async def write(
     """
     # From the profile this vacancy scores best with; the default profile for a
     # vacancy nothing has scored yet.
+    # In the posting's language where the owner has that track in it.
     profile = await store.load_profile_facts(
-        session, await store.best_profile_for(session, vacancy_id)
+        session, await profile_choice.for_vacancy(session, vacancy_id)
     )
     if profile is None:
         return WorkshopResult(vacancy_id=vacancy_id, title="", skipped=NO_PROFILE)

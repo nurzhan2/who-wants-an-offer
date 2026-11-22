@@ -46,7 +46,7 @@ export function VacancyDetail({ id }: { id: string }) {
   if (isError) return <Failure error={error} what="вакансию" />
 
   const { vacancy, match, requirements, letter } = data
-  const description = vacancy.description_md ?? vacancy.description_raw
+  const description = readable(vacancy.description_md ?? vacancy.description_raw)
   const hasLetter = letter !== null && letter.characters > 0
 
   return (
@@ -101,6 +101,7 @@ export function VacancyDetail({ id }: { id: string }) {
             >
               {hasLetter ? 'Переписать письмо' : 'Написать письмо'}
             </Button>
+            {hasLetter && letter.text ? <LetterText text={letter.text} /> : null}
             {write.data ? (
               <p className="mt-3 text-small">
                 {write.data.saved
@@ -457,4 +458,54 @@ function CvResult({ document }: { document: GeneratedDocument }) {
       {document.review ? ` · ATS ${String(document.review.ats.score)}` : ''}
     </p>
   )
+}
+
+/** The letter as it will be sent, readable and copyable in place. */
+function LetterText({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="mt-4">
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words border border-hairline p-3 font-sans text-small">
+        {text}
+      </pre>
+      <button
+        type="button"
+        className="mt-2 text-small underline underline-offset-4"
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+          })
+        }}
+      >
+        {copied ? 'Скопировано' : 'Скопировать письмо'}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * A description as text a person reads. Some boards (arbeitnow) store HTML,
+ * sometimes escaped twice, and the page showed `&lt;p&gt;…` (22 Nov 2026).
+ * Parsed with DOMParser, which runs no script; only the text is kept, with
+ * paragraphs and list items on lines of their own.
+ */
+function readable(text: string | null): string | null {
+  if (!text) return text
+  let value = text
+  if (/&lt;\/?[a-z]/i.test(value)) {
+    const area = document.createElement('textarea')
+    area.innerHTML = value
+    value = area.value
+  }
+  if (/<\/?(p|li|ul|ol|br|strong|em|div|span|h[1-6])\b/i.test(value)) {
+    const doc = new DOMParser().parseFromString(value, 'text/html')
+    doc.querySelectorAll('li').forEach((item) => {
+      item.prepend('• ')
+    })
+    doc.querySelectorAll('p, li, br, div, h1, h2, h3, h4, h5, h6').forEach((element) => {
+      element.append('\n')
+    })
+    value = doc.body.textContent
+  }
+  return value.replace(/\n{3,}/g, '\n\n').trim()
 }

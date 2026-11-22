@@ -47,6 +47,7 @@ from app.schemas.document import (
     RequirementCoverageRead,
 )
 from app.services import documents as documents_service
+from app.services import profile_choice
 from app.services import workshop as workshop_service
 from app.workshop import store as workshop_store
 
@@ -57,13 +58,18 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 _DISPOSITION = "attachment; filename=\"{ascii}\"; filename*=UTF-8''{quoted}"
 
 
-async def _profile(session: AsyncSession, profile_id: UUID | None) -> ProfileFacts:
+async def _profile(
+    session: AsyncSession, profile_id: UUID | None, vacancy_id: UUID | None = None
+) -> ProfileFacts:
     """The named profile or the active one, as a 404 rather than a None.
 
     Every endpoint below needs the same lookup and the same refusal, and a
     missing profile is not an odd case here: the two buttons live on a vacancy,
     and a vacancy screen is reachable before a resume has ever been uploaded.
     """
+    if profile_id is None and vacancy_id is not None:
+        # For a vacancy: the resume that won it, in the posting's language.
+        profile_id = await profile_choice.for_vacancy(session, vacancy_id)
     profile = await letter_store.load_profile_facts(session, profile_id)
     if profile is None:
         raise HTTPException(
@@ -130,7 +136,7 @@ async def generate_cv(
     and the text, and a client that only followed a Location header would have
     to fetch them separately to find out whether the document was withheld.
     """
-    profile = await _profile(session, profile_id)
+    profile = await _profile(session, profile_id, vacancy_id)
     outcome = await service.write_cv(session, vacancy_id, profile)
     await session.commit()
     return _to_read(outcome)
@@ -152,7 +158,7 @@ async def generate_cover_letter(
     is where the sending agent reads it from. This endpoint adds the file, the
     audit and the version history; it does not move the letter anywhere.
     """
-    profile = await _profile(session, profile_id)
+    profile = await _profile(session, profile_id, vacancy_id)
     outcome = await service.write_cover_letter(session, vacancy_id, profile)
     await session.commit()
     return _to_read(outcome)
@@ -206,7 +212,7 @@ async def list_versions(
     from one version to the next after they edited the rules — and
     ``rules_version`` on each row is what says whether the rules are the reason.
     """
-    profile = await _profile(session, profile_id)
+    profile = await _profile(session, profile_id, vacancy_id)
     rows = await document_store.versions(
         session, profile_id=profile.profile_id, vacancy_id=vacancy_id, kind=kind
     )

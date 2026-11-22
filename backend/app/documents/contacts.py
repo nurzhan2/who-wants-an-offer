@@ -182,11 +182,33 @@ def from_stored(
         phone=settled(stored.phone, edited=edits.phone, fallback=parsed.phone),
         city=settled(stored.city, edited=edits.city, fallback=parsed.city),
         links=(
-            tuple((link.label or link.kind, link.url) for link in stored.links)
+            _tidy_links(tuple((link.label or link.kind, link.url) for link in stored.links))
             if stored.links
             else parsed.links
         ),
     )
+
+
+def _tidy_links(links: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Stored links as a CV prints them: one address each, without the scheme.
+
+    A stored value can hold two addresses glued by ``|`` or a space (seen on
+    22 Nov 2026: ``https://github.com/nurzhan2|linkedin.com/in/...``), which the
+    CV printed as one broken link. Each part becomes its own link, labelled by
+    its site where :data:`LINK_PATTERNS` knows it.
+    """
+    tidy: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for label, url in links:
+        parts = [part for part in re.split(r"[|\s,;]+", url) if part]
+        for index, part in enumerate(parts):
+            address = _bare(part)
+            if not address or address.lower() in seen:
+                continue
+            seen.add(address.lower())
+            known = next((name for name, pattern in LINK_PATTERNS if pattern.fullmatch(part)), None)
+            tidy.append((known or (label if index == 0 else "Link"), address))
+    return tuple(tidy)
 
 
 def from_resume_text(

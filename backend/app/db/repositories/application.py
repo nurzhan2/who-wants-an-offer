@@ -230,10 +230,12 @@ class ApplicationRepository:
     async def letter_brief(self, vacancy_id: UUID) -> LetterBrief | None:
         """Whether this vacancy has a letter, and what became of it.
 
-        The oldest row for the vacancy, which is the one ``letters/store.py``
-        writes to. A vacancy may legitimately carry two tracker rows — two
-        attempts at the same job — and picking a different one here would show a
-        card the letter screen does not.
+        The oldest row that carries a letter, which is the one
+        ``letters/store.py::existing_letter`` reads — and, when none does, the
+        oldest row. A vacancy may carry two tracker rows (a row created for a
+        CV before any letter, two attempts at one job); taking the oldest row
+        regardless showed «ещё не написано» beside a generator answering «уже
+        написано» (22 Nov 2026). The text comes along so the page can show it.
         """
         stmt = (
             select(
@@ -242,9 +244,10 @@ class ApplicationRepository:
                 Application.sent_at,
                 Application.agent_status,
                 Application.hh_last_state.label("outcome"),
+                Application.cover_letter.label("text"),
             )
             .where(Application.vacancy_id == vacancy_id)
-            .order_by(Application.created_at, Application.id)
+            .order_by(Application.cover_letter.is_(None), Application.created_at, Application.id)
             .limit(1)
         )
         row = (await self.session.execute(stmt)).one_or_none()

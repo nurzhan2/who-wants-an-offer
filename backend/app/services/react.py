@@ -41,7 +41,7 @@ from app.llm import usage as usage_ledger
 from app.matching import profile_vectors
 from app.matching.best import best_profiles
 from app.matching.scorer import ProfileNotReadyError, score_corpus
-from app.services import bot, notify, outreach
+from app.services import bot, notify, outreach, profile_choice
 from app.services.outreach import Sender
 
 logger = get_logger(__name__)
@@ -214,6 +214,7 @@ async def _write_letter(
     existing = await _letter(session, vacancy_id)
     if existing is not None or not budget.can_write:
         return existing
+    profile_id = await profile_choice.for_vacancy(session, vacancy_id) or profile_id
     profile = await letters_store.load_profile_facts(session, profile_id)
     if profile is None:
         return None
@@ -228,6 +229,9 @@ async def _write_letter(
 async def _cv_for(
     session: AsyncSession, vacancy_id: UUID, profile_id: UUID
 ) -> tuple[str, bytes] | None:
+    # The file in the posting's language: an English posting gets backend-en
+    # even when backend-ru scored a point higher.
+    profile_id = await profile_choice.for_vacancy(session, vacancy_id) or profile_id
     if settings.worker_attach_cv == "original":
         return await original_cv(session, profile_id)
     profile = await letters_store.load_profile_facts(session, profile_id)

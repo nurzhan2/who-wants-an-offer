@@ -2523,3 +2523,21 @@ async def test_projects_are_stored_and_read_back(
     assert [(project.name, project.achievements) for project in loaded] == [
         ("Eval harness", ("Runs in CI.",))
     ]
+
+
+@pytest.mark.unit
+def test_glued_stored_links_become_separate_bare_links() -> None:
+    """22 Nov: «https://github.com/x|linkedin.com/in/y» printed as one broken link."""
+    from app.documents.contacts import _tidy_links
+
+    tidy = _tidy_links((("github", "https://github.com/synthetic|linkedin.com/in/synthetic"),))
+    assert tidy == (("GitHub", "github.com/synthetic"), ("LinkedIn", "linkedin.com/in/synthetic"))
+
+
+@pytest.mark.unit
+def test_a_skill_with_a_qualifier_or_version_finds_its_group() -> None:
+    """«PostgreSQL (JSONB, pg_trgm)» and «Java 21» used to land in Other."""
+    from app.documents.skill_groups import group_of
+
+    assert group_of("PostgreSQL (JSONB, pg_trgm)") == group_of("PostgreSQL")
+    assert group_of("Java 21") == group_of("Java") != "other"

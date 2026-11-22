@@ -228,6 +228,8 @@ export interface LetterBrief {
   sent_at: string | null
   agent_status: string | null
   outcome: string | null
+  /** The letter itself, shown and copied on the vacancy page. */
+  text?: string | null
 }
 
 export interface VacancyRead {

@@ -288,6 +288,8 @@ class LetterBrief(BaseModel):
     sent_at: datetime | None = None
     agent_status: str | None = None
     outcome: str | None = None
+    #: The letter itself, for reading and copying on the vacancy page.
+    text: str | None = None
 
 
 class ManualApply(BaseModel):
