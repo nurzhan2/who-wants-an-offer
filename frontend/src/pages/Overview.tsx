@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 
 import { href } from '@/app/routes'
 import { Autopilot } from '@/components/Autopilot'
@@ -46,17 +47,46 @@ export function Overview({ query }: { query: UseQueryResult<OverviewData> }) {
     )
   }
 
+  // The day's two actions first — run the chain, confirm the batch — then what
+  // came of them. The single steps and the crawl's machinery are folded: they
+  // are for the day something went wrong, not for every visit.
   return (
     <div className="rise">
       <FirstSteps data={data} />
       <Autopilot />
-      <OperationsPanel />
-      <Corpus data={data} />
-      <Crawl data={data} />
-      <Runs runs={data.runs} />
-      <HarvestPanel data={data} />
       <Applications data={data} />
+      <HarvestPanel data={data} />
+      <Fold
+        title="Шаги по отдельности"
+        note="Сбор, эмбеддинги, подбор, письма, ответы hh и отправка — каждый своей кнопкой."
+      >
+        <OperationsPanel />
+      </Fold>
+      <Fold title="Сбор вакансий подробно" note="База, позиция обхода и последние прогоны источников.">
+        <Corpus data={data} />
+        <Crawl data={data} />
+        <Runs runs={data.runs} />
+      </Fold>
     </div>
+  )
+}
+
+/** A folded block: a heading-sized line that opens what is under it. */
+function Fold({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+  return (
+    <details className="more group mb-section border-y border-hairline">
+      <summary className="flex cursor-pointer select-none flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-5 transition-colors duration-800 ease-slow hover:text-muted">
+        <span>
+          <span className="block text-heading font-semibold">{title}</span>
+          <span className="mt-1 block text-small text-muted">{note}</span>
+        </span>
+        <span className="text-small underline underline-offset-4">
+          <span className="group-open:hidden">показать</span>
+          <span className="hidden group-open:inline">скрыть</span>
+        </span>
+      </summary>
+      <div className="pt-6">{children}</div>
+    </details>
   )
 }
 
@@ -81,8 +111,8 @@ function FirstSteps({ data }: { data: OverviewData }) {
             </a>
           }
         >
-          Без резюме вакансии не с чем сравнивать. Загрузите PDF или DOCX на странице «Мои данные»
-          — разбор займёт около трёх минут, потом вернитесь сюда и нажмите «Собрать вакансии».
+          Без резюме вакансии не с чем сравнивать. Разбор займёт около трёх минут, потом вернитесь
+          сюда и нажмите «Запустить цепочку».
         </NextStep>
       </div>
     )
@@ -91,8 +121,8 @@ function FirstSteps({ data }: { data: OverviewData }) {
     return (
       <div className="mb-section">
         <NextStep title="В базе пока нет вакансий">
-          Нажмите «Собрать вакансии» ниже. Когда обход закончится, посчитайте эмбеддинги и
-          пересчитайте подбор — список появится на странице «Вакансии».
+          Нажмите «Запустить цепочку» ниже — она соберёт и оценит вакансии, список появится на
+          странице «Вакансии».
         </NextStep>
       </div>
     )
@@ -105,7 +135,8 @@ function Corpus({ data }: { data: OverviewData }) {
   return (
     <Section
       title="База"
-      note="Сколько постингов собрано и какая часть из них пригодна для семантического сравнения. Разрыв между «в базе» и «оценено» — это очередь скоринга, а не потеря."
+      note="Сколько вакансий собрано и сколько из них уже оценено."
+      more={<p>Разрыв между «в базе» и «оценено» — это очередь на оценку, а не потеря.</p>}
     >
       <Stats>
         <Stat value={vacancies.total} label="вакансий в базе" note={`активных ${count(vacancies.active)}`} />
@@ -118,7 +149,7 @@ function Corpus({ data }: { data: OverviewData }) {
               : 'весь корпус векторизован'
           }
         />
-        <Stat value={vacancies.scored} label="посчитанных match" note="для активного резюме" />
+        <Stat value={vacancies.scored} label="оценено" note="для активного резюме" />
         <Stat value={vacancies.skill_rows} label="строк навыков" note="то, из чего считается покрытие" />
       </Stats>
     </Section>
@@ -138,7 +169,13 @@ function Crawl({ data }: { data: OverviewData }) {
   return (
     <Section
       title="Обход"
-      note="Позиция по городам и файлам sitemap. Отрезков больше одного — значит прогон прерывался: покрытая часть корпуса перестала быть непрерывной."
+      note="Где остановился обход — по городам и файлам sitemap."
+      more={
+        <p>
+          Отрезков больше одного — значит прогон прерывался: пройденная часть перестала быть
+          непрерывной.
+        </p>
+      }
     >
       {data.crawl.length === 0 ? (
         <Empty>Ни один источник ещё не записал позицию — обхода не было.</Empty>
@@ -265,8 +302,14 @@ function HarvestPanel({ data }: { data: OverviewData }) {
   const { harvest } = data
   return (
     <Section
-      title="Что выкупил последний прогон"
-      note="Поимённо: у hh нельзя спросить вакансии по ключевым словам — страница покупается до того, как станет ясно, что на ней. Здесь видно, python это или чужое."
+      title="Новое за последний прогон"
+      note="Какие вакансии пришли — видно, ваше это или чужое."
+      more={
+        <p>
+          У hh нельзя спросить вакансии по ключевым словам: страница скачивается до того, как
+          станет ясно, что на ней.
+        </p>
+      }
     >
       {harvest.since === null ? (
         <Empty>Прогонов ещё не было, окно не с чего открывать.</Empty>
@@ -307,7 +350,18 @@ function Applications({ data }: { data: OverviewData }) {
   return (
     <Section
       title="Отклики"
-      note="«Отправлено» — только отклики, которые подтвердил сам hh: его счётчик откликов на вакансии не ноль или он сообщил состояние переписки. Отправку, о которой отчитался агент, но hh её ещё не подтвердил, видно отдельно."
+      note="Где сейчас ваши отклики."
+      action={
+        <a href={href('applications')} className="text-small underline underline-offset-4">
+          Открыть отклики →
+        </a>
+      }
+      more={
+        <p>
+          «Отправлено» — только отклики, которые подтвердил сам hh. Отправку, о которой отчитался
+          агент, но hh ещё не подтвердил, видно отдельно.
+        </p>
+      }
     >
       <Stats>
         <Stat
@@ -315,7 +369,7 @@ function Applications({ data }: { data: OverviewData }) {
           label="отправлено, hh подтвердил"
           note={
             applications.sent > applications.sent_confirmed
-              ? `ещё ${count(applications.sent - applications.sent_confirmed)} без подтверждения — нажмите «Обновить исходы откликов»`
+              ? `ещё ${count(applications.sent - applications.sent_confirmed)} ждут подтверждения hh`
               : null
           }
         />

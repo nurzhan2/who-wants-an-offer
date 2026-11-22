@@ -18,26 +18,58 @@ import type { Bucket } from '@/types/api'
 export function Section({
   title,
   note,
+  more,
   action,
   children,
 }: {
   title: string
-  /** One line under the heading: what this panel is measuring, or its caveat. */
+  /** One short line under the heading: what this panel is for. */
   note?: string
+  /** The longer explanation, folded behind «Подробнее». */
+  more?: ReactNode
   action?: ReactNode
   children: ReactNode
 }) {
   return (
     <section className="mb-section">
-      <div className="mb-6 flex items-baseline justify-between gap-6 border-b border-hairline pb-4">
-        <div>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-hairline pb-4">
+        <div className="min-w-0 max-w-2xl">
           <h2 className="text-heading font-semibold">{title}</h2>
-          {note ? <p className="mt-1 max-w-2xl text-small text-muted">{note}</p> : null}
+          {note ? <p className="mt-1 text-small text-muted">{note}</p> : null}
+          {more ? <More>{more}</More> : null}
         </div>
         {action}
       </div>
       {children}
     </section>
+  )
+}
+
+/**
+ * The longer explanation, folded.
+ *
+ * One sentence stays on the screen; the reasoning behind it — the caveat, the
+ * measurement, the setting's name — is a click away rather than a paragraph
+ * every visit has to read past. A native `<details>`: keyboard and screen
+ * readers get it for free.
+ */
+export function More({
+  children,
+  label = 'Подробнее',
+  className = '',
+}: {
+  children: ReactNode
+  label?: string
+  className?: string
+}) {
+  return (
+    <details className={`more group mt-1 max-w-2xl text-small text-muted ${className}`}>
+      <summary className="inline-block cursor-pointer select-none underline decoration-hairline underline-offset-4 transition-colors hover:text-ink">
+        <span className="group-open:hidden">{label}</span>
+        <span className="hidden group-open:inline">Скрыть</span>
+      </summary>
+      <div className="mt-2 space-y-2">{children}</div>
+    </details>
   )
 }
 

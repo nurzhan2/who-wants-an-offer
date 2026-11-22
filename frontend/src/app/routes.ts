@@ -14,18 +14,25 @@
  * nobody configured.
  */
 
+/**
+ * The screens in the order the work goes: find a vacancy, confirm the
+ * application, keep the resumes right; then the letter rules, the archive of
+ * documents, and the machinery. The route names stay as they were — links
+ * people copied keep working — only the words and the order changed.
+ */
 export const ROUTES = {
-  overview: 'Обзор',
   vacancies: 'Вакансии',
   applications: 'Отклики',
-  documents: 'Документы',
+  profile: 'Резюме',
   workshop: 'Мастерская',
-  profile: 'Мои данные',
+  documents: 'Документы',
+  overview: 'Обзор',
 } as const
 
 export type RouteName = keyof typeof ROUTES
 
-export const DEFAULT_ROUTE: RouteName = 'overview'
+/** The list of vacancies: the screen nearly every visit starts from. */
+export const DEFAULT_ROUTE: RouteName = 'vacancies'
 
 /** Where the app is now: a screen, and for one of them a selected vacancy. */
 export interface Location {

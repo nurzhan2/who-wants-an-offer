@@ -105,4 +105,16 @@ export function plural(value: number, one: string, few: string, many: string): s
   return many
 }
 
+/**
+ * A server sentence without the configuration names in it.
+ *
+ * Some reasons the backend writes name the setting behind them in brackets —
+ * «… до 1 года (AGENT_MAX_EXPERIENCE_GAP_YEARS)». That name is for whoever edits
+ * `.env`, not for the person reading why a vacancy was set aside, so the
+ * bracketed UPPER_SNAKE name is dropped and the sentence around it kept.
+ */
+export function plainText(value: string): string {
+  return value.replace(/\s*\([A-Z][A-Z0-9]*_[A-Z0-9_]+(?:,\s*[A-Z][A-Z0-9]*_[A-Z0-9_]+)*\)/g, '')
+}
+
 export { NOTHING }

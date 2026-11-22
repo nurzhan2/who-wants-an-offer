@@ -27,7 +27,7 @@ export function explain(error: unknown): { reason: string; remedy: string } {
   if (status === 401 || status === 403) {
     return {
       reason: 'Сервер не принял локальный токен.',
-      remedy: 'Проверьте AGENT_API_TOKEN в файле .env и перезапустите приложение.',
+      remedy: 'Проверьте токен агента в файле настроек .env и перезапустите приложение.',
     }
   }
   if (status === 404) {
@@ -46,4 +46,4 @@ export function explain(error: unknown): { reason: string; remedy: string } {
 }
 
 const START_REMEDY =
-  'Запустите приложение двойным щелчком по start.cmd в папке проекта (или командой python -m wwao up) и обновите страницу.'
+  'Запустите приложение (start.cmd в папке проекта) и обновите страницу.'

@@ -65,7 +65,7 @@ const STEPS: Step[] = [
   {
     kind: 'outcomes',
     doing: 'Читаем ответы…',
-    label: 'Обновить исходы откликов',
+    label: 'Обновить ответы hh',
     what: 'Агент открывает ваши отправленные отклики на hh и читает ответ. Ничего не отправляет.',
     agent: true,
   },
@@ -85,7 +85,7 @@ export function OperationsPanel() {
   return (
     <Section
       title="Операции"
-      note="Вся ежедневная работа — здесь. Каждая операция идёт на сервере; строка под кнопкой показывает, что происходит, и обновляется сама."
+      note="Каждая операция идёт на сервере; строка под кнопкой обновляется сама."
     >
       {state.isError ? (
         <p className="mb-6 text-small" role="alert">
@@ -184,8 +184,8 @@ function StepRow({
         {step.agent ? (
           <p className="mt-1 text-small text-muted">
             {agentAlive
-              ? 'Локальный агент на связи.'
-              : 'Локальный агент не запущен: запустите приложение через start.cmd — он поднимется вместе с ним.'}
+              ? 'Агент на вашем компьютере на связи.'
+              : 'Агент на вашем компьютере не запущен — запустите приложение (start.cmd).'}
           </p>
         ) : null}
         {step.kind === 'send' ? <ConfirmedSummary list={confirmed.data} /> : null}

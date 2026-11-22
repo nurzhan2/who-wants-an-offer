@@ -27,16 +27,16 @@ interface Props {
 
 function Violations({ title, tone, items }: { title: string; tone: 'red' | 'amber'; items: Violation[] }) {
   const tones = {
-    red: 'border-red-200 bg-red-50 text-ink',
-    amber: 'border-amber-200 bg-amber-50 text-amber-900',
+    red: 'border-ink',
+    amber: 'border-hairline',
   }
   return (
-    <div className={`rounded-md border p-3 text-sm ${tones[tone]}`}>
-      <p className="font-medium">{title}</p>
+    <div className={`border p-3 text-small ${tones[tone]}`}>
+      <p className="font-semibold">{title}</p>
       <ul className="mt-2 space-y-1">
         {items.map((violation) => (
           <li key={`${violation.rule_id}-${violation.detail}`}>
-            <span className="font-medium">{violation.message}</span>
+            <span className="font-semibold">{violation.message}</span>
             <span className="block text-xs opacity-80">{violation.detail}</span>
           </li>
         ))}
@@ -50,24 +50,24 @@ export function PreviewPanel({ vacancies, query, onQuery, busy, error, preview, 
   const chosen = selected || vacancies[0]?.id || ''
 
   return (
-    <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+    <section className="space-y-4 border border-hairline p-5 sm:p-6">
       <div>
-        <h3 className="text-sm font-semibold text-ink">Предпросмотр</h3>
-        <p className="mt-1 text-sm text-muted">
-          Пробное письмо по текущим правилам и эталонам, на любой вакансии из базы. Ничего не
-          сохраняется — в очередь откликов это письмо не попадёт.
+        <h2 className="text-heading font-semibold">Пробное письмо</h2>
+        <p className="mt-1 text-small text-muted">
+          Проверьте правила и эталоны на любой вакансии. Ничего не сохраняется и никуда не
+          уходит.
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
         <input
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          className="w-full rounded-field border border-hairline bg-paper px-3 py-2 text-small text-ink outline-none transition-colors focus:border-ink"
           value={query}
           onChange={(event) => { onQuery(event.target.value); }}
           placeholder="Поиск вакансии"
         />
         <select
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          className="w-full rounded-field border border-hairline bg-paper px-3 py-2 text-small text-ink outline-none transition-colors focus:border-ink"
           value={chosen}
           onChange={(event) => { setSelected(event.target.value); }}
         >
@@ -94,7 +94,7 @@ export function PreviewPanel({ vacancies, query, onQuery, busy, error, preview, 
       </div>
 
       {error != null && (
-        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-ink">
+        <p className="border border-ink p-3 text-small font-semibold">
           {error instanceof Error ? error.message : 'Не удалось сгенерировать письмо'}
         </p>
       )}
@@ -132,7 +132,7 @@ export function PreviewPanel({ vacancies, query, onQuery, busy, error, preview, 
           )}
 
           {preview.written && preview.text && (
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-ink">
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap border border-hairline p-4 font-sans text-small text-ink">
               {preview.text}
             </pre>
           )}

@@ -224,6 +224,14 @@
     }
   }
 
+  /* «Подробнее»: a summary without the browser's triangle — the words say it. */
+  .more > summary {
+    list-style: none;
+  }
+  .more > summary::-webkit-details-marker {
+    display: none;
+  }
+
   /* Long words — a URL, a Kazakh company name, an unbroken skill list — wrap
      inside their card instead of pushing the grid apart. */
   .break-anywhere {

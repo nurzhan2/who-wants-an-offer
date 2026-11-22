@@ -59,13 +59,13 @@ export const STAGES: Record<string, string> = {
   other: 'вне очереди',
 }
 
+/** One short line beside each stage's heading. */
 export const STAGE_NOTES: Record<string, string> = {
-  queued: 'Письмо написано. Нажмите «Откликнуться…», прочитайте карточку и подтвердите.',
-  needs_manual: 'Агент остановился и оставил причину.',
-  sent_unconfirmed:
-    'Агент сообщил об отправке, но подтверждения от hh в базе нет. «Обновить исходы откликов» перечитает эти вакансии на hh.',
-  sent: 'hh подтвердил: его счётчик откликов не ноль или он сообщил состояние переписки.',
-  other: 'Без письма и без отправки: заметки, заведённые руками, и вакансии, которые агент пропустил.',
+  queued: 'письмо готово, ждёт вашего подтверждения',
+  needs_manual: 'агент остановился — причина в карточке',
+  sent_unconfirmed: 'агент отправил, hh ещё не подтвердил',
+  sent: 'hh подтвердил отправку',
+  other: 'без письма и без отправки',
 }
 
 /** What hh has said, grouped by the backend into four answers plus a fallback. */

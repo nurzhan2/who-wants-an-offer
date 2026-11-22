@@ -5,7 +5,7 @@ import { Button, Field, Pill } from '@/components/ui'
 import { useBatchPlan, useConfirmBatch } from '@/hooks/useBatch'
 import { useOperations, useStartOperation } from '@/hooks/useOperations'
 import { explain } from '@/lib/errors'
-import { count, dateTime, plural, score as formatScore } from '@/lib/format'
+import { count, dateTime, plainText, plural, score as formatScore } from '@/lib/format'
 import { ATS_OVERALL } from '@/lib/labels'
 import type { BatchItem, BatchPlan, SetAsideItem } from '@/types/autopilot'
 import type { OperationsState } from '@/types/operations'
@@ -73,7 +73,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
 
   return (
     <div
-      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 py-10"
+      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-2 pt-4 sm:px-4 sm:pt-10"
       style={{ backgroundColor: 'color-mix(in srgb, var(--ink) 55%, transparent)' }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
@@ -85,7 +85,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="sheet w-full max-w-4xl border border-ink bg-paper p-card text-ink outline-none"
+        className="sheet mb-4 w-full max-w-4xl border border-ink bg-paper p-5 text-ink outline-none sm:mb-10 sm:p-card"
       >
         <div className="mb-6 flex items-baseline justify-between gap-6 border-b border-hairline pb-4">
           <h2 id={titleId} className="text-heading font-semibold">
@@ -144,8 +144,7 @@ function Batch({ plan }: { plan: BatchPlan }) {
       <div>
         <p className="font-semibold">Отправлять нечего.</p>
         <p className="mt-1 text-small text-muted">
-          Ни одна вакансия не прошла отбор целиком. Запустите цепочку на «Обзоре» — она соберёт
-          вакансии, напишет письма и перечитает страницы. Что не прошло и почему — ниже.
+          Ни одна вакансия не прошла отбор целиком. Что не прошло и почему — ниже.
         </p>
         <SetAside items={plan.set_aside} />
       </div>
@@ -192,20 +191,19 @@ function Batch({ plan }: { plan: BatchPlan }) {
             {refused.length > 0 ? (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-small">
                 {refused.map((outcome) => (
-                  <li key={outcome.vacancy_id} className="break-anywhere">
-                    {outcome.detail ?? 'Эту вакансию подтвердить не удалось.'}
+                  <li key={outcome.vacancy_id} className="break-words">
+                    {plainText(outcome.detail ?? 'Эту вакансию подтвердить не удалось.')}
                   </li>
                 ))}
               </ul>
             ) : null}
             <p className="mt-2 text-small text-muted">
-              Отправляет агент на вашем компьютере: он открывает каждую вакансию заново, выдерживает
-              паузы между откликами и не отправляет то, на что отклик уже есть.
+              Отправляет агент на вашем компьютере, с паузами между откликами.
             </p>
             {watcherAlive(operations.data) ? null : (
               <p className="mt-2 text-small text-muted">
-                Локальный агент сейчас не запущен: запрос подождёт его. Запустите приложение через
-                start.cmd — он поднимется вместе с ним, и отправка начнётся сама.
+                Агент сейчас не запущен — отправка начнётся, когда вы запустите приложение
+                (start.cmd).
               </p>
             )}
             <div className="mt-4">
@@ -313,9 +311,10 @@ function Row({
             href={item.url}
             target="_blank"
             rel="noreferrer noopener"
-            className="break-anywhere mt-1 block text-small underline underline-offset-4"
+            title={item.url}
+            className="mt-1 inline-block text-small underline underline-offset-4"
           >
-            {item.url}
+            открыть вакансию ↗
           </a>
           {item.score_explanation ? (
             <p className="break-anywhere mt-2 text-small">{item.score_explanation}</p>
@@ -389,7 +388,7 @@ export function SetAside({ items }: { items: SetAsideItem[] }) {
               {item.company ? ` · ${item.company}` : ''}
               {item.score ? ` · ${formatScore(item.score)}` : ''}
             </span>
-            <p className="break-anywhere text-muted">{item.reason}</p>
+            <p className="break-words text-muted">{plainText(item.reason)}</p>
           </li>
         ))}
       </ul>
