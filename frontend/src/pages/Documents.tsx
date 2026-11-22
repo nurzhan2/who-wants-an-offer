@@ -1,8 +1,7 @@
 import { useState } from 'react'
 
 import { href } from '@/app/routes'
-import { ResumeUpload } from '@/components/ResumeUpload'
-import { Card, Failure, Field, Loading, NextStep, Pill, Section } from '@/components/ui'
+import { Card, Empty, Failure, Field, Loading, More, NextStep, Pill, Section } from '@/components/ui'
 import { useDocuments } from '@/hooks/queries'
 import { bytes, count, date, plural, score } from '@/lib/format'
 import { ATS_OVERALL, ATS_SEVERITY, outcomeLabel, PARSE_STATUS } from '@/lib/labels'
@@ -43,12 +42,25 @@ export function Documents() {
     <div className="rise">
       <Section
         title="Резюме"
-        note="Загруженные файлы и то, что из них вычитает парсер работодателя. CV под конкретную вакансию собирается в её карточке."
+        note="Загруженные файлы и как их прочтёт робот-фильтр работодателя."
+        more={
+          <p>
+            Загрузить или заменить резюме — на странице «Резюме». CV под конкретную вакансию
+            собирается в карточке вакансии.
+          </p>
+        }
+        action={
+          <a
+            href={href('profile')}
+            className="rounded-pill border border-ink px-6 py-2 text-small transition-colors duration-800 ease-slow hover:bg-ink hover:text-paper"
+          >
+            Загрузить резюме
+          </a>
+        }
       >
-        <div className="mb-6">
-          <ResumeUpload />
-        </div>
-        {data.resumes.length === 0 ? null : (
+        {data.resumes.length === 0 ? (
+          <Empty>Резюме ещё не загружали.</Empty>
+        ) : (
           <div className="rise-list grid gap-6 lg:grid-cols-2">
             {data.resumes.map((resume) => (
               <Resume key={resume.profile_id} resume={resume} />
@@ -59,22 +71,27 @@ export function Documents() {
 
       <Section
         title="Письма"
-        note={`Правила проверки сейчас — версия ${data.current_rules_version}. Если письмо писала другая версия, это видно в строке: правила меняются, а письмо остаётся.`}
+        note="Все написанные письма: когда написано, отправлено и что ответил hh."
+        more={
+          <p>
+            Правила проверки писем сейчас — версия {data.current_rules_version}. Если письмо писала
+            другая версия, это видно в строке: правила меняются, а письмо остаётся.
+          </p>
+        }
       >
         {data.letters.length === 0 ? (
           <NextStep
             title="Писем пока нет"
             action={
               <a
-                href={href('overview')}
+                href={href('vacancies')}
                 className="rounded-pill border border-ink px-6 py-2 text-small transition-colors duration-800 ease-slow hover:bg-ink hover:text-paper"
               >
-                К операциям
+                К вакансиям
               </a>
             }
           >
-            На «Обзоре» нажмите «Написать письма» — пять писем для лучших вакансий. Письмо для
-            одной вакансии пишется в её карточке.
+            Письмо пишется в карточке вакансии — кнопкой «Написать письмо».
           </NextStep>
         ) : (
           <div className="rise-list space-y-4">
@@ -109,10 +126,15 @@ function Resume({ resume }: { resume: ResumeDocument }) {
       ) : null}
 
       {ats === null ? (
-        <p className="mt-6 border-t border-hairline pt-4 text-small">
-          ATS-отчёта нет. Это не «чисто»: аудит по этому файлу просто не записывали, а файл после
-          разбора удаляется, так что пересчитать его уже нельзя.
-        </p>
+        <div className="mt-6 border-t border-hairline pt-4 text-small">
+          <p>Проверки робот-фильтром для этого файла нет.</p>
+          <More>
+            <p>
+              Это не «чисто»: проверку по этому файлу просто не записывали, а файл после разбора
+              удаляется, так что пересчитать её уже нельзя.
+            </p>
+          </More>
+        </div>
       ) : (
         <div className="mt-6 border-t border-hairline pt-4">
           <div className="flex items-baseline justify-between">

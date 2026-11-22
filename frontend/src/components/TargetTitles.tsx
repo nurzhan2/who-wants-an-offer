@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '@/api/client'
+import { More } from '@/components/ui'
 import { useSaveTargetTitles, useSearchPlan } from '@/hooks/useSearchPlan'
 import type { SearchBasis, SearchUse, SourceSearchPreview } from '@/types/searchPlan'
 
@@ -66,13 +67,18 @@ export function TargetTitles({ profileId, stored }: { profileId: string; stored:
 
   return (
     <section className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2 border-b border-hairline pb-4">
-        <h2 className="text-xl tracking-tight text-ink">Какие вакансии ищу</h2>
-        <p className="max-w-2xl text-sm text-muted">
-          Названия должностей — кем вы хотите работать: «Python Developer», «Backend разработчик».
-          Это не фильтр и не навыки. По ним hh выбирает разделы каталога, а jsearch, arbeitnow и
-          remotive ищут вакансии. Пустое поле — поиск по навыкам из резюме.
+      <header className="border-b border-hairline pb-4">
+        <h2 className="text-heading font-semibold">Какие вакансии ищу</h2>
+        <p className="mt-1 max-w-2xl text-small text-muted">
+          Кем вы хотите работать: «Python Developer», «Backend разработчик».
         </p>
+        <More>
+          <p>
+            Это не фильтр и не навыки: по этим названиям источники ищут вакансии (hh выбирает
+            разделы каталога, остальные отправляют их как запросы). Пустое поле — поиск по навыкам
+            из резюме.
+          </p>
+        </More>
       </header>
 
       <ul className="flex flex-wrap gap-3" aria-label="Названия должностей">
@@ -144,7 +150,7 @@ export function TargetTitles({ profileId, stored }: { profileId: string; stored:
         <p className="text-sm text-muted">Не больше {MAX_TITLES} названий.</p>
       ) : null}
       {save.isError ? (
-        <p className="text-sm text-ink">
+        <p className="text-small font-semibold" role="alert">
           {save.error instanceof ApiError
             ? (save.error.detail ?? `Не удалось сохранить (${String(save.error.status)}).`)
             : 'Не удалось сохранить.'}
@@ -152,31 +158,36 @@ export function TargetTitles({ profileId, stored }: { profileId: string; stored:
       ) : null}
       {dirty && !save.isPending ? (
         <p className="text-sm text-muted">
-          Есть несохранённые правки — план ниже изменится после сохранения.
+          Есть несохранённые правки.
         </p>
       ) : null}
 
-      <div className="flex flex-col gap-4 border-t border-hairline pt-6">
-        <h3 className="text-label uppercase text-muted">Что пойдёт в поиск на следующем прогоне</h3>
-        {plan.isPending ? <p className="text-sm text-muted">Считаем план…</p> : null}
-        {plan.isError ? <p className="text-sm text-muted">План поиска недоступен.</p> : null}
-        {plan.data ? (
-          <>
-            <p className="text-sm">
-              {BASIS[plan.data.basis]} Запросов в плане: {plan.data.queries}
-              {plan.data.dropped > 0
-                ? `, ещё ${String(plan.data.dropped)} не поместились в лимит прогона`
-                : ''}
-              .
-            </p>
-            <div className="grid gap-px border border-hairline bg-hairline md:grid-cols-2">
-              {plan.data.sources.map((source) => (
-                <SourcePlan key={source.slug} source={source} />
-              ))}
-            </div>
-          </>
-        ) : null}
-      </div>
+      <details className="more group flex flex-col gap-4 border-t border-hairline pt-4">
+        <summary className="cursor-pointer select-none text-small text-muted underline decoration-hairline underline-offset-4 hover:text-ink">
+          <span className="group-open:hidden">Показать, что пойдёт в поиск на следующем прогоне</span>
+          <span className="hidden group-open:inline">Скрыть план поиска</span>
+        </summary>
+        <div className="mt-4 flex flex-col gap-4">
+          {plan.isPending ? <p className="text-sm text-muted">Считаем план…</p> : null}
+          {plan.isError ? <p className="text-sm text-muted">План поиска недоступен.</p> : null}
+          {plan.data ? (
+            <>
+              <p className="text-sm">
+                {BASIS[plan.data.basis]} Запросов в плане: {plan.data.queries}
+                {plan.data.dropped > 0
+                  ? `, ещё ${String(plan.data.dropped)} не поместились в лимит прогона`
+                  : ''}
+                .
+              </p>
+              <div className="grid gap-px border border-hairline bg-hairline md:grid-cols-2">
+                {plan.data.sources.map((source) => (
+                  <SourcePlan key={source.slug} source={source} />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </details>
     </section>
   )
 }

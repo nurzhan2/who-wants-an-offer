@@ -4,7 +4,6 @@ import { ApiError } from '@/api/client'
 import { Field } from '@/components/Field'
 import { LinkRows } from '@/components/LinkRows'
 import { ProfilesPanel } from '@/components/ProfilesPanel'
-import { ResumeUpload } from '@/components/ResumeUpload'
 import { TargetTitles } from '@/components/TargetTitles'
 import { useActiveProfile, useContacts, useSaveContacts } from '@/hooks/useContacts'
 import { useProfiles } from '@/hooks/useProfiles'
@@ -74,23 +73,63 @@ function errorMessage(error: unknown): string {
  * visible rather than surprising.
  */
 /**
- * The resume upload is always at the top: until 2026-09-16 this screen said
- * «Резюме ещё не загружено» and offered no way to load one — that took curl.
+ * The resumes (and their upload) are always at the top: until 2026-09-16 this
+ * screen said «Резюме ещё не загружено» and offered no way to load one.
  */
 export function MyData() {
   // Which resume the rest of the screen edits. Null until the owner picks one:
   // then it is the default profile, as before phase 22.
   const [selected, setSelected] = useState<string | null>(null)
   return (
-    <div className="flex flex-col gap-12">
-      <ProfilesPanel selected={selected} onSelect={setSelected} />
-      <ResumeUpload />
-      <ContactsForm selected={selected} />
+    <div className="flex flex-col gap-4">
+      <ProfilesPanel />
+      <ContactsForm selected={selected} onSelect={setSelected} />
     </div>
   )
 }
 
-function ContactsForm({ selected }: { selected: string | null }) {
+/**
+ * Which resume the titles and contacts below belong to. A picker rather than
+ * a radio in each card: the cards are about the set, this is about one of them.
+ */
+function ProfilePicker({
+  value,
+  onSelect,
+}: {
+  value: string
+  onSelect: (profileId: string) => void
+}) {
+  const list = useProfiles()
+  const options = list.data?.filter((row) => row.parse_status === 'ready') ?? []
+  if (options.length < 2) return null
+  return (
+    <label className="flex flex-wrap items-center gap-3 text-small">
+      <span className="text-muted">Названия должностей и контакты ниже — для резюме</span>
+      <select
+        className="border border-hairline bg-paper px-3 py-2 text-ink"
+        value={value}
+        onChange={(event) => {
+          onSelect(event.target.value)
+        }}
+      >
+        {options.map((row) => (
+          <option key={row.id} value={row.id}>
+            {row.slug ?? row.headline ?? row.resume_filename ?? row.id}
+            {row.track ? ` · ${row.track}` : ''}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function ContactsForm({
+  selected,
+  onSelect,
+}: {
+  selected: string | null
+  onSelect: (profileId: string) => void
+}) {
   const profile = useActiveProfile()
   const list = useProfiles()
   const chosen = list.data?.find((row) => row.id === selected) ?? profile.data
@@ -119,7 +158,7 @@ function ContactsForm({ selected }: { selected: string | null }) {
     return (
       <Note>
         {missing
-          ? 'Резюме ещё не загружено — загрузите его кнопкой выше. Контакты появятся здесь, как только оно разберётся.'
+          ? 'Контакты появятся здесь, когда загруженное резюме разберётся.'
           : `${explain(profile.error).reason} ${explain(profile.error).remedy}`}
       </Note>
     )
@@ -147,16 +186,18 @@ function ContactsForm({ selected }: { selected: string | null }) {
         }
       }}
     >
-      {/* First, and inside the form only for the layout: it has its own save
-          button, and none of its controls submit the contact block. */}
+      {chosen ? <ProfilePicker value={chosen.id} onSelect={onSelect} /> : null}
+
+      {/* Inside the form only for the layout: it has its own save button, and
+          none of its controls submit the contact block. */}
       {chosen ? (
         <TargetTitles key={chosen.id} profileId={chosen.id} stored={chosen.target_titles} />
       ) : null}
 
       <section className="flex flex-col gap-6">
         <SectionTitle
-          title="Контакты"
-          note="Этот блок печатается в каждом сгенерированном резюме. Он не участвует в подборе вакансий и никуда не отправляется."
+          title="Контакты для CV"
+          note="Печатаются в каждом собранном CV. В подборе вакансий не участвуют."
         />
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <Field
@@ -205,11 +246,11 @@ function ContactsForm({ selected }: { selected: string | null }) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-6">
-        <SectionTitle
-          title="Ссылки"
-          note="GitHub, Telegram, сайт, портфолио — что угодно с адресом на http(s)."
-        />
+      <section className="flex flex-col gap-4">
+        <div>
+          <h3 className="text-small font-semibold uppercase tracking-widest">Ссылки</h3>
+          <p className="mt-1 text-small text-muted">GitHub, Telegram, сайт, портфолио.</p>
+        </div>
         <LinkRows
           links={draft.links}
           onChange={(links) => {
@@ -226,19 +267,28 @@ function ContactsForm({ selected }: { selected: string | null }) {
         >
           {save.isPending ? 'Сохраняем…' : 'Сохранить'}
         </button>
-        {save.isError && <p className="text-sm text-ink">{errorMessage(save.error)}</p>}
-        {!dirty && save.isSuccess && <p className="text-sm text-muted">Сохранено.</p>}
-        {dirty && !save.isError && <p className="text-sm text-muted">Есть несохранённые правки.</p>}
+        {save.isError && (
+          <p className="border border-ink px-3 py-2 text-small font-semibold" role="alert">
+            Не сохранено. {errorMessage(save.error)}
+          </p>
+        )}
+        {!dirty && save.isSuccess && (
+          <p className="text-small font-semibold" role="status">
+            Сохранено.
+          </p>
+        )}
+        {dirty && !save.isError && <p className="text-small text-muted">Есть несохранённые правки.</p>}
       </div>
     </form>
   )
 }
 
+/** The same heading as every other screen's sections. */
 function SectionTitle({ title, note }: { title: string; note: string }) {
   return (
-    <header className="flex flex-col gap-2 border-b border-hairline pb-4">
-      <h2 className="text-xl tracking-tight text-ink">{title}</h2>
-      <p className="max-w-2xl text-sm text-muted">{note}</p>
+    <header className="border-b border-hairline pb-4">
+      <h2 className="text-heading font-semibold">{title}</h2>
+      <p className="mt-1 max-w-2xl text-small text-muted">{note}</p>
     </header>
   )
 }
