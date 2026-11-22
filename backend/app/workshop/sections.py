@@ -23,6 +23,20 @@ has one item per value. Both are ordinary ways to write a skills section, and a
 counter that understood only one of them would report 1 for the other and stop
 a letter for a rule the document actually keeps.
 
+**One section, several names.** A rule is written once, in the owner's words,
+and the documents it is measured against are in two languages: «в навыках не
+меньше 21 пункта» has to find ``КЛЮЧЕВЫЕ НАВЫКИ`` in a Russian CV and
+``SKILLS`` in an English one. So the standard CV sections have a small table of
+names (:data:`SECTION_ALIASES`), and a rule naming any of them finds a heading
+spelled as any other. A name outside the table still has to match exactly, and
+an exact match always wins over an alias.
+
+**A label is not always a heading.** ``Стек: Python, FastAPI`` under a job is a
+line of that job, not the start of a section called «Стек», and reading it as
+one cut the experience section of every generated CV in half. The few labels
+that only ever introduce a line of a job (:data:`INLINE_LABELS`) are left in
+the body.
+
 What this deliberately does not do is parse structure the way a resume parser
 would. It answers "how many things are listed under this heading", which is what
 a rule can ask, and it answers it the same way every time so that a person can
@@ -64,6 +78,41 @@ _BOLD_LINE = re.compile(r"^\*\*(?P<text>.+?)\*\*$")
 #: Everything that carries no meaning when two spellings of one heading are
 #: compared: case, surrounding whitespace, the markers, the trailing colon.
 _HEADING_NOISE = re.compile(r"[\s:*#_\-–—]+")
+
+
+#: The standard CV sections and the names each is written under, in both
+#: languages, already folded by :func:`fold_heading`. A rule and a heading that
+#: land in the same group are the same section.
+SECTION_ALIASES: tuple[frozenset[str], ...] = (
+    frozenset(
+        {
+            "навыки",
+            "ключевыенавыки",
+            "профессиональныенавыки",
+            "техническиенавыки",
+            "skills",
+            "keyskills",
+            "technicalskills",
+        }
+    ),
+    frozenset(
+        {
+            "опыт",
+            "опытработы",
+            "experience",
+            "workexperience",
+            "professionalexperience",
+            "employment",
+        }
+    ),
+    frozenset({"осебе", "summary", "profile", "about", "aboutme"}),
+    frozenset({"образование", "education"}),
+    frozenset({"языки", "знаниеязыков", "languages"}),
+    frozenset({"проекты", "projects"}),
+)
+
+#: Labels that introduce one line of a job rather than a section, folded.
+INLINE_LABELS = frozenset({"стек", "stack", "techstack", "технологии", "technologies"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +194,8 @@ def _split_heading_line(line: str) -> tuple[str, str] | None:
     if not tail:
         return None
     heading = _heading_text(f"{head.strip()}:")
+    if heading is not None and fold_heading(heading) in INLINE_LABELS:
+        return None
     return (heading, tail) if heading else None
 
 
@@ -171,7 +222,7 @@ def sections_of(document: str) -> tuple[Section, ...]:
             heading, body = inline[0], [inline[1]]
             continue
         announced = _heading_text(line)
-        if announced is not None:
+        if announced is not None and fold_heading(announced) not in INLINE_LABELS:
             close()
             heading, body = announced, []
             continue
@@ -192,10 +243,22 @@ def find_section(document: str, name: str) -> Section | None:
     wanted = fold_heading(name)
     if not wanted:
         return None
-    for section in sections_of(document):
+    found = sections_of(document)
+    for section in found:
         if fold_heading(section.heading) == wanted:
             return section
+    # No heading spelled the rule's way: try the other names of the same
+    # standard section, so one rule holds for a CV in either language.
+    group = _alias_group(wanted)
+    for section in found:
+        if fold_heading(section.heading) in group:
+            return section
     return None
+
+
+def _alias_group(folded: str) -> frozenset[str]:
+    """The names of the standard section ``folded`` is one of, or nothing."""
+    return next((group for group in SECTION_ALIASES if folded in group), frozenset())
 
 
 def items_of(lines: list[str]) -> tuple[str, ...]:

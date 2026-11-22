@@ -132,8 +132,11 @@ SECTION_PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 #: Characters a Russian or English resume is made of. Anything far outside this
-#: is a font that did not survive extraction.
-EXPECTED_CHARS = re.compile(r"[a-zA-Zа-яА-ЯёЁ0-9\s\.,;:!?()\[\]{}«»\"'`@#№%&*+/\\|_—–\-…€$₸₽]")
+#: is a font that did not survive extraction. The bullet, the middle dot, the
+#: tilde and the multiplication and approximation signs are ordinary CV
+#: typography ("• Cut p95 by ~3×"), and this project's own renderer writes the
+#: first two.
+EXPECTED_CHARS = re.compile(r"[a-zA-Zа-яА-ЯёЁ0-9\s\.,;:!?()\[\]{}«»\"'`@#№%&*+/\\|_—–\-…€$₸₽•·~×≈]")
 
 
 #: A check reads the pages and either reports something or stays quiet.

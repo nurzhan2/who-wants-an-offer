@@ -54,10 +54,25 @@ from app.letters.context import (
 )
 
 #: Longest summary a generated CV may carry, in characters. A CV summary is
-#: three lines that say what the person does; past this it is a cover letter in
-#: the wrong document, and it pushes the first job below the fold on the page
-#: an employer actually skims.
-MAX_SUMMARY_CHARS = 600
+#: two or three sentences that say what the person does and one result; past
+#: this it is a cover letter in the wrong document, and it pushes the first job
+#: below the fold on the page an employer actually skims. The research behind
+#: the workshop (docs/WORKSHOP-RESEARCH.md, rule L3) puts it at 50 words, which
+#: is about this many characters in either language.
+MAX_SUMMARY_CHARS = 450
+
+#: Most achievement bullets one job shows. The research's figure for a recent
+#: role is three to five (S11, S27); more reads as a duty list, and on a
+#: one-page CV the sixth bullet of one job is the second job pushed off it.
+MAX_BULLETS_PER_JOB = 5
+
+#: What the rule-based CV shows for a job past the :data:`RECENT_JOBS` most
+#: recent: older roles earn fewer lines, the same compression a person applies
+#: by hand (S28).
+MAX_BULLETS_OLDER_JOB = 3
+
+#: How many of the newest jobs count as recent for :data:`MAX_BULLETS_PER_JOB`.
+RECENT_JOBS = 2
 
 #: Most jobs a CV shows. Beyond this it is a work history rather than a CV, and
 #: the ones past it are old enough that no employer reads them. Selecting which
@@ -89,6 +104,11 @@ class ExperienceEntry(Facts):
     #: about this employer, which is a worse lie than an invention in general.
     stack: tuple[str, ...] = ()
     domains: tuple[str, ...] = ()
+    #: The resume's own bullets for this job, verbatim. A generated CV chooses
+    #: some of them by index and prints those exactly as they are here; it has
+    #: no way to write one, which is what keeps every result and every number
+    #: in the document the owner's own.
+    achievements: tuple[str, ...] = ()
 
 
 class EducationEntry(Facts):
@@ -153,6 +173,53 @@ class CVContext(BaseModel):
         keys = {fold(skill.canonical_name) for skill in self.profile.skills}
         keys.update(fold(name) for entry in self.experience for name in entry.stack)
         return frozenset(key for key in keys if key)
+
+    @property
+    def achievement_text(self) -> str:
+        """Every stored bullet of every job, one per line.
+
+        A requirement named in here is something the resume says the candidate
+        did, in the owner's own words — so :mod:`app.documents.guard` treats a
+        mention of it as traceable, exactly as it treats a job's recorded stack.
+        Without that, a bullet printed verbatim could fail the document for
+        naming a technology extraction never promoted to a skill row, and the
+        rule-based CV — which prints every bullet — would be refused for quoting
+        the resume.
+        """
+        return "\n".join(text for entry in self.experience for text in entry.achievements)
+
+    @property
+    def recorded_text(self) -> str:
+        """Everything the profile records, for checking where a number came from.
+
+        The profile's own text (headline, summary, skills, years) plus every job
+        — title, employer, dates and bullets — and every degree. A figure in a
+        model-written summary has to be one of the figures in here; see
+        :func:`app.documents.guard.check_summary`.
+        """
+        jobs = [
+            " ".join(
+                part
+                for part in (
+                    entry.title,
+                    entry.company,
+                    entry.start,
+                    entry.end,
+                    *entry.achievements,
+                )
+                if part
+            )
+            for entry in self.experience
+        ]
+        degrees = [
+            " ".join(
+                str(part)
+                for part in (item.institution, item.degree, item.field, item.end_year)
+                if part
+            )
+            for item in self.education
+        ]
+        return "\n".join((self.profile.recorded_text, *jobs, *degrees))
 
     @property
     def allowed_headlines(self) -> tuple[str, ...]:
@@ -232,6 +299,7 @@ def experience_from_rows(rows: list[dict[str, object]]) -> tuple[ExperienceEntry
                 is_current=bool(row.get("is_current")),
                 stack=_strings(row.get("stack")),
                 domains=_strings(row.get("domains")),
+                achievements=_strings(row.get("achievements")),
             )
         )
     return tuple(entries)
@@ -291,34 +359,69 @@ def _text(value: object) -> str | None:
     return text or None
 
 
-def render_period(entry: ExperienceEntry) -> str:
-    """One job's dates, in the format the auditor can actually find.
+#: Month names as each language's CV writes a period. English abbreviates
+#: (``Aug 2025``), Russian writes the nominative in full and in lower case
+#: (``август 2025``) — rules D1 and D2 of the workshop research. Both forms are
+#: ones ``app.resume.ats_audit.DATE_TOKEN`` recognises, which is the other half
+#: of the contract: an employment period the auditor cannot find reads to an
+#: applicant tracking system as no experience at all.
+MONTHS: dict[str, tuple[str, ...]] = {
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+    "ru": (
+        "январь",
+        "февраль",
+        "март",
+        "апрель",
+        "май",
+        "июнь",
+        "июль",
+        "август",
+        "сентябрь",
+        "октябрь",
+        "ноябрь",
+        "декабрь",
+    ),
+}
 
-    ``MM.YYYY`` because ``app.resume.ats_audit.DATE_TOKEN`` recognises that and
-    a bare year in a sentence deliberately does not — an employment period is
-    how an applicant tracking system computes seniority, and a resume whose
-    dates it cannot parse reads as no experience at all. The auditor and this
-    renderer are two halves of one agreement about what a date looks like, which
-    is why the format is stated here in terms of the pattern that has to match
-    it rather than chosen for looks.
+#: The word for a job that has not ended, per language.
+PRESENT: dict[str, str] = {"en": "Present", "ru": "настоящее время"}
+
+#: Between the two ends of a period: an en dash with spaces, the typographic
+#: range sign in both languages, and inside cp1251.
+PERIOD_DASH = " \u2013 "
+
+
+def render_period(entry: ExperienceEntry, language: str = "ru") -> str:
+    """One job's dates, in the CV's language and in a form the auditor finds.
+
+    ``Aug 2025 - Present`` in English, ``август 2025 - настоящее время`` in
+    Russian (the dash printed is an en dash). A language this module has no
+    month names for is written in English, the lingua franca of the remote
+    postings that are the only other case. A month that is not ``YYYY-MM`` (a
+    resume that gave only a year, read through an older extraction) is printed
+    as stored rather than guessed at.
     """
-    start = _dotted(entry.start)
+    lang = language if language in MONTHS else "en"
+    start = _month_name(entry.start, lang)
     if entry.is_current:
-        return f"{start} — по настоящее время" if start else "по настоящее время"
-    end = _dotted(entry.end)
+        return f"{start}{PERIOD_DASH}{PRESENT[lang]}" if start else PRESENT[lang]
+    end = _month_name(entry.end, lang)
     if start and end:
-        return f"{start} — {end}"
+        return f"{start}{PERIOD_DASH}{end}"
     return start or end or ""
 
 
-def _dotted(month: str | None) -> str:
-    """ "2022-04" as "04.2022"; anything else unchanged or empty."""
+def _month_name(month: str | None, language: str) -> str:
+    """ "2022-04" as "Apr 2022" / "апрель 2022"; anything else unchanged or empty."""
     if not month:
         return ""
     parts = month.split("-")
     if len(parts) != 2 or not all(part.isdigit() for part in parts):
         return month
-    return f"{parts[1]}.{parts[0]}"
+    index = int(parts[1])
+    if not 1 <= index <= len(MONTHS[language]):
+        return month
+    return f"{MONTHS[language][index - 1]} {parts[0]}"
 
 
 class SkillChoice(BaseModel):

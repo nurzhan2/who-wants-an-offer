@@ -44,7 +44,11 @@ from dataclasses import dataclass
 
 from app.db.enums import RuleScope, RuleSeverity
 from app.documents import guard
-from app.documents.context import MAX_EXPERIENCE_ENTRIES, MAX_SUMMARY_CHARS
+from app.documents.context import (
+    MAX_BULLETS_PER_JOB,
+    MAX_EXPERIENCE_ENTRIES,
+    MAX_SUMMARY_CHARS,
+)
 from app.letters import guard as letter_guard
 from app.workshop.rules import RuleSpec
 
@@ -119,6 +123,19 @@ def current(
             key="max_summary_chars",
             ru=f"блок «о себе» не длиннее {MAX_SUMMARY_CHARS} символов",
             value=str(MAX_SUMMARY_CHARS),
+        ),
+        HardRule(
+            key="summary_numbers_recorded",
+            ru="в блоке «о себе» только числа, которые есть в профиле",
+            value="always",
+        ),
+        HardRule(
+            key="achievements_verbatim",
+            ru=(
+                "достижения печатаются дословно из резюме, "
+                f"не больше {MAX_BULLETS_PER_JOB} на место работы"
+            ),
+            value=str(MAX_BULLETS_PER_JOB),
         ),
         HardRule(
             key="max_experience_entries",

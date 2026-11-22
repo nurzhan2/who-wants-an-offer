@@ -36,6 +36,7 @@ Two shapes of the stored data are worth knowing before reading the code:
   runs.
 """
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -116,6 +117,21 @@ class VacancyFacts(Facts):
     letter_max_length: int = DEFAULT_MAX_LENGTH
 
 
+class AchievementFact(Facts):
+    """One bullet from one job, verbatim from the resume.
+
+    Carried so a letter's proof can be a real result with the owner's own
+    number in it rather than a list of technologies. The rule-based letter
+    quotes it and never paraphrases it; a model may paraphrase it, and then
+    :func:`unsupported_numbers` is what checks that no figure was added on the
+    way.
+    """
+
+    company: str
+    title: str
+    text: str
+
+
 class ProfileFacts(Facts):
     """Everything about the candidate the letter may use.
 
@@ -133,6 +149,73 @@ class ProfileFacts(Facts):
     #: "en C1", "ru native" — as stored, because the level vocabulary is not ours.
     languages: tuple[str, ...] = ()
     skills: tuple[SkillFact, ...] = ()
+    #: Every job's bullets, newest job first, each in the resume's own order.
+    achievements: tuple[AchievementFact, ...] = ()
+
+    @property
+    def recorded_text(self) -> str:
+        """Every string the profile stores about this person, joined.
+
+        What a number in a generated text is checked against. Not the resume's
+        raw text: that also holds the phone number, and "a figure appears
+        somewhere in the upload" is a weaker promise than "a figure is one of
+        the facts this profile records".
+        """
+        parts: list[str] = [
+            self.headline or "",
+            self.summary or "",
+            *self.languages,
+            *(f"{skill.spelling} {skill.canonical_name}" for skill in self.skills),
+            *(f"{item.title} {item.company} {item.text}" for item in self.achievements),
+        ]
+        if self.total_years is not None:
+            parts.append(f"{self.total_years:g}")
+        parts.extend(f"{skill.years:g}" for skill in self.skills if skill.years is not None)
+        return "\n".join(part for part in parts if part)
+
+
+#: A figure as prose writes one: digits, optionally grouped or with a decimal
+#: part ("12,000", "6,1", "2.4"). Not preceded by a letter, digit or separator,
+#: so the 3 in "S3", the 2 in "EC2" and the 95 in "p95" are part of a name
+#: rather than a claim; a unit glued on after it ("2.4s", "40%") is allowed.
+_NUMBER = re.compile(r"(?<![\w.,])(?:\d{1,3}(?:[,\u00a0 ]\d{3}(?!\d))+|\d+)(?:[.,]\d+)?(?![.,]?\d)")
+
+#: Thousands written in groups of three: "12,000", "12 000".
+_GROUPED = re.compile(r"^\d{1,3}(?:[,\u00a0 ]\d{3})+$")
+
+
+def numbers_in(text: str) -> frozenset[str]:
+    """Every figure in ``text``, each in the spellings it may be matched under.
+
+    "12,000", "12 000" and "12000" are one number, and so are "6,1" and "6.1":
+    Russian writes a decimal comma and English a decimal point, and a CV in one
+    language quoting a resume in the other is the ordinary case on this market.
+    Anything looser ("12k" for "12,000") is deliberately not a match: rounding is
+    the first step of inventing, and a false alarm here costs only a regenerated
+    summary.
+    """
+    found: set[str] = set()
+    for match in _NUMBER.finditer(text):
+        token = match.group(0)
+        if _GROUPED.match(token):
+            found.add(re.sub(r"[,\u00a0 ]", "", token))
+        found.add(re.sub(r"[\u00a0 ]", "", token).replace(",", "."))
+    return frozenset(found)
+
+
+def unsupported_numbers(text: str, evidence: str) -> tuple[str, ...]:
+    """Figures in ``text`` that appear nowhere in ``evidence``, in text order.
+
+    A figure is unsupported only when none of the spellings :func:`numbers_in`
+    gives it is among the spellings of the evidence's figures.
+    """
+    known = numbers_in(evidence)
+    missing: list[str] = []
+    for match in _NUMBER.finditer(text):
+        token = match.group(0).strip()
+        if not numbers_in(token) & known and token not in missing:
+            missing.append(token)
+    return tuple(missing)
 
 
 class SkillOverlap(Facts):
@@ -241,11 +324,20 @@ def posting_language(vacancy: VacancyFacts) -> str:
     title and the description; an empty posting stays Russian, this market's
     default.
     """
-    text = f"{vacancy.title} {vacancy.description or ''}"
+    return text_language(f"{vacancy.title} {vacancy.description or ''}")
+
+
+def text_language(text: str, *, default: str = "ru") -> str:
+    """``ru`` or ``en`` by the share of Cyrillic letters; ``default`` for none.
+
+    The measure a posting is judged by, applied to any other text \u2014 a resume
+    bullet, a summary \u2014 so "is this sentence in the document's language" is
+    answered the same way "which language is the document in" was.
+    """
     cyrillic = sum(1 for char in text if "\u0400" <= char <= "\u04ff")
     latin = sum(1 for char in text if "a" <= char.lower() <= "z")
     if cyrillic + latin == 0:
-        return "ru"
+        return default
     return "ru" if cyrillic / (cyrillic + latin) >= CYRILLIC_SHARE_FOR_RUSSIAN else "en"
 
 
