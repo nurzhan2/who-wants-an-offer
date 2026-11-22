@@ -14,38 +14,54 @@ import type { ProfileBrief } from '@/types/api'
  * answering — because every number on every screen is a claim about one
  * database read through one API, and a page that renders stale figures with no
  * sign of the connection being gone is the failure mode a dashboard has.
+ *
+ * «Отклики» carries the one number that asks for the owner: how many written
+ * letters wait for a confirmation. It is the next thing to do, wherever they are.
  */
 export function Shell({
   route,
   profile,
+  waiting,
   children,
 }: {
   route: RouteName
   /** undefined: not known yet; null: known to be absent. */
   profile: ProfileBrief | null | undefined
+  /** Applications with a letter, waiting for the owner's confirmation. */
+  waiting?: number | undefined
   children: ReactNode
 }) {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header className="border-b border-hairline">
-        <div className="mx-auto flex max-w-shell flex-wrap items-baseline justify-between gap-4 px-6 py-6">
-          <a href={href('overview')} className="text-small font-semibold uppercase tracking-widest">
+        <div className="mx-auto flex max-w-shell flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 pt-6 sm:px-6">
+          <a href={href('vacancies')} className="text-small font-semibold uppercase tracking-widest">
             Who wants an offer?
           </a>
           <Connection />
         </div>
-        <nav className="mx-auto max-w-shell px-6" aria-label="Разделы">
+        <nav className="mx-auto max-w-shell px-4 sm:px-6" aria-label="Разделы">
           <ul className="-mx-3 flex flex-wrap">
             {(Object.keys(ROUTES) as RouteName[]).map((name) => (
               <li key={name}>
                 <a
                   href={href(name)}
                   aria-current={name === route ? 'page' : undefined}
-                  className={`inline-block px-3 py-4 text-small transition-colors duration-800 ease-slow ${
-                    name === route ? 'font-semibold' : 'text-muted hover:text-ink'
+                  className={`inline-flex items-baseline gap-1.5 border-b px-3 py-4 text-small transition-colors duration-800 ease-slow ${
+                    name === route
+                      ? 'border-ink font-semibold'
+                      : 'border-transparent text-muted hover:text-ink'
                   }`}
                 >
                   {ROUTES[name]}
+                  {name === 'applications' && waiting ? (
+                    <span
+                      className="tnum rounded-pill bg-ink px-1.5 text-micro leading-4 text-paper"
+                      aria-label={`ждут подтверждения: ${String(waiting)}`}
+                    >
+                      {waiting}
+                    </span>
+                  ) : null}
                 </a>
               </li>
             ))}
@@ -54,16 +70,15 @@ export function Shell({
       </header>
       <NoticeBanner />
 
-      <main key={route} className="rise mx-auto max-w-shell px-6 py-section">
+      <main key={route} className="rise mx-auto max-w-shell px-4 py-section sm:px-6">
         <Owner profile={profile} />
         {children}
       </main>
 
-      <footer className="mx-auto max-w-shell px-6 pb-section text-small text-muted">
+      <footer className="mx-auto max-w-shell px-4 pb-section text-small text-muted sm:px-6">
         <p className="border-t border-hairline pt-6">
-          Отклик уходит только после вашего подтверждения в карточке вакансии: письмо, ссылка и
-          оценка показываются целиком, и отправляет их агент на вашем компьютере — ровно то, что вы
-          подтвердили.
+          Ничего не уходит без вашего подтверждения: отклик отправляет агент на вашем компьютере —
+          ровно то, что вы подтвердили.
         </p>
       </footer>
     </div>
@@ -84,16 +99,16 @@ function Owner({ profile }: { profile: ProfileBrief | null | undefined }) {
   if (profile === null) {
     return (
       <p className="mb-section text-small text-muted">
-        Активного резюме нет.{' '}
+        Резюме ещё нет.{' '}
         <a href={href('profile')} className="text-ink underline underline-offset-4">
-          Загрузите его на «Мои данные»
+          Загрузите его
         </a>
         , чтобы вакансии получили оценку.
       </p>
     )
   }
   return (
-    <div className="mb-section flex flex-wrap items-baseline gap-x-4 gap-y-1 text-small">
+    <div className="mb-8 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-small">
       <span className="font-semibold">{profile.name ?? 'Резюме без имени'}</span>
       {profile.headline ? <span className="text-muted">{profile.headline}</span> : null}
       <span className="text-muted">
@@ -107,20 +122,22 @@ function Owner({ profile }: { profile: ProfileBrief | null | undefined }) {
  * Whether the backend is answering.
  *
  * Encoded in the word and in the weight, not in a dot's colour: this system has
- * no chromatic values at all, and a grey dot beside "деградация" would carry
- * exactly as much information as the word on its own.
+ * no chromatic values at all. The version and environment are for whoever runs
+ * the server, so they sit in the tooltip rather than in the line.
  */
 function Connection() {
   const { data, isPending, isError } = useHealth()
 
-  if (isPending) return <span className="text-small text-muted">проверяем бэкенд…</span>
-  if (isError) return <span className="text-small font-semibold">бэкенд недоступен</span>
+  if (isPending) return <span className="text-small text-muted">проверяем связь…</span>
+  if (isError) return <span className="text-small font-semibold">сервер недоступен</span>
 
   return (
-    <span className="text-small text-muted">
-      {data.status === 'ok' ? 'бэкенд отвечает' : <strong className="font-semibold">деградация</strong>}
-      {' · '}
-      {data.version} · {data.environment}
+    <span className="text-small text-muted" title={`${data.version} · ${data.environment}`}>
+      {data.status === 'ok' ? (
+        'сервер на связи'
+      ) : (
+        <strong className="font-semibold">сервер работает с перебоями</strong>
+      )}
     </span>
   )
 }

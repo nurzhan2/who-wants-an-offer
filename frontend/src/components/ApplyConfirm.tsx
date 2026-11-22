@@ -2,11 +2,11 @@ import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 
 
 import { ApiError } from '@/api/client'
 import { Freshness } from '@/components/Freshness'
-import { Button, Field, Pill } from '@/components/ui'
+import { Button, Field, More, Pill } from '@/components/ui'
 import { useConfirm, useConfirmationCard, useWithdraw } from '@/hooks/useConfirmations'
 import { useOperations, useStartOperation } from '@/hooks/useOperations'
 import { explain } from '@/lib/errors'
-import { count, dateTime, plural, score as formatScore } from '@/lib/format'
+import { count, dateTime, plainText, plural, score as formatScore } from '@/lib/format'
 import { ATS_OVERALL, BUCKETS } from '@/lib/labels'
 import type { ConfirmationCard, QueueItem } from '@/types/confirmations'
 
@@ -23,7 +23,14 @@ import type { ConfirmationCard, QueueItem } from '@/types/confirmations'
  * letter was read, then confirm. For any source but hh the card only links to
  * the original posting.
  */
-export function ApplyConfirm({ vacancyId }: { vacancyId: string }) {
+export function ApplyConfirm({
+  vacancyId,
+  outline = false,
+}: {
+  vacancyId: string
+  /** Drawn as the secondary button: when something else is the next step. */
+  outline?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => {
     setOpen(false)
@@ -31,6 +38,7 @@ export function ApplyConfirm({ vacancyId }: { vacancyId: string }) {
   return (
     <>
       <Button
+        outline={outline}
         onClick={() => {
           setOpen(true)
         }}
@@ -68,7 +76,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
 
   return (
     <div
-      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 py-10"
+      className="veil fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-2 py-4 sm:px-4 sm:py-10"
       style={{ backgroundColor: 'color-mix(in srgb, var(--ink) 55%, transparent)' }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
@@ -80,7 +88,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: ReactNode
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="sheet w-full max-w-3xl border border-ink bg-paper p-card text-ink outline-none"
+        className="sheet w-full max-w-3xl border border-ink bg-paper p-5 text-ink outline-none sm:p-card"
       >
         <div className="mb-6 flex items-baseline justify-between gap-6 border-b border-hairline pb-4">
           <h2 id={titleId} className="text-heading font-semibold">
@@ -141,9 +149,10 @@ function Head({ card }: { card: ConfirmationCard }) {
           href={card.url}
           target="_blank"
           rel="noreferrer noopener"
-          className="break-anywhere mt-2 block text-small underline underline-offset-4"
+          title={card.url}
+          className="mt-2 inline-block text-small underline underline-offset-4"
         >
-          {card.url}
+          открыть вакансию на {card.source ?? 'сайте'} ↗
         </a>
       ) : null}
       <div className="mt-3">
@@ -174,8 +183,8 @@ function Blocked({ card }: { card: ConfirmationCard }) {
       <p className="font-semibold">Этот отклик сейчас нельзя подтвердить</p>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-small">
         {card.blockers.map((line) => (
-          <li key={line} className="break-anywhere">
-            {line}
+          <li key={line} className="break-words">
+            {plainText(line)}
           </li>
         ))}
       </ul>
@@ -245,21 +254,29 @@ function Confirmable({
           }
         >
           {item.letter !== null ? (
-            <p className="break-anywhere max-h-80 overflow-y-auto whitespace-pre-wrap border border-hairline p-4 text-small">
+            <p className="break-words max-h-[50vh] overflow-y-auto whitespace-pre-wrap border border-hairline p-4 text-body leading-relaxed">
               {item.letter}
             </p>
           ) : null}
         </Field>
       </div>
 
-      <div className="mt-8 border-t border-ink pt-6">
+      {/* The decision stays in view while the letter above is read: on a
+          phone the card is several screens long, and the checkbox at the very
+          bottom was easy to never reach. */}
+      <div className="sticky bottom-0 -mx-5 mt-8 border-t border-ink bg-paper px-5 py-5 sm:-mx-card sm:px-card">
         {state?.valid ? (
           <div>
             <p className="font-semibold">Подтверждено {dateTime(state.confirmed_at)}.</p>
             <p className="mt-1 text-small text-muted">
-              Отправит агент на вашем компьютере: он ещё раз откроет вакансию и не отправит, если
-              отклик уже есть. Подтверждение действует {card.ttl_hours} ч.
+              Отправит агент на вашем компьютере. Подтверждение действует {card.ttl_hours} ч.
             </p>
+            <More>
+              <p>
+                Перед отправкой агент ещё раз откроет вакансию и не отправит, если отклик уже
+                есть.
+              </p>
+            </More>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button
                 busy={sending ? 'Отправка идёт…' : start.isPending ? 'Запускаем…' : false}
@@ -289,7 +306,7 @@ function Confirmable({
           <div>
             {state && !state.valid ? (
               <p className="mb-4 text-small font-semibold" role="status">
-                {state.reason}
+                {state.reason ? plainText(state.reason) : null}
               </p>
             ) : null}
             <label className="flex cursor-pointer items-start gap-3 text-small">
@@ -302,8 +319,8 @@ function Confirmable({
                 }}
               />
               <span>
-                Я прочитал(а) карточку и письмо целиком. Отправить именно этот текст на эту
-                вакансию от моего имени.
+                Я прочитал(а) письмо целиком. Отправить именно этот текст на эту вакансию от моего
+                имени.
               </span>
             </label>
             <div className="mt-4 flex flex-wrap gap-3">
@@ -321,7 +338,7 @@ function Confirmable({
             {confirm.isError ? (
               <p className="mt-3 text-small font-semibold" role="alert">
                 {confirm.error instanceof ApiError && confirm.error.status === 409
-                  ? (confirm.error.detail ?? 'Карточка изменилась — перечитайте её.')
+                  ? plainText(confirm.error.detail ?? 'Карточка изменилась — перечитайте её.')
                   : explain(confirm.error).reason}
               </p>
             ) : null}
