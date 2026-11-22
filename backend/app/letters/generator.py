@@ -60,11 +60,12 @@ agent's job, and only after a human has confirmed it.
 # declared here because pyproject.toml belongs to another change.
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.config import settings
 from app.core.exceptions import AppError, LLMError
 from app.core.logging import get_logger
 from app.db.enums import RuleKind, RuleScope
@@ -88,6 +89,8 @@ from app.letters.guard import (
 from app.llm import usage as usage_ledger
 from app.llm.base import LLMTask, LLMUsage
 from app.llm.router import LLMRouter, get_router
+from app.review import recruiter
+from app.review.recruiter import Verdict
 from app.workshop import rules as workshop
 from app.workshop.references import ReferenceText
 from app.workshop.rules import RuleSpec, RuleViolation
@@ -101,9 +104,16 @@ TASK = LLMTask.COVER_LETTER
 
 PROMPT_NAME = "cover_letter"
 
-#: One generation, then one correction. A third attempt has never been observed
-#: to fix what a second did not, and the fallback is always available.
+#: Drafts that may fail the guards before the fallback answers: one
+#: generation, then one correction. A third attempt has never been observed to
+#: fix what a second did not, and the fallback is always available.
 MAX_ATTEMPTS = 2
+
+#: Model calls for drafts in all, guard corrections and review rewrites
+#: together. Two guard failures and two review rounds can then both happen in
+#: one generation without either starving the other; the reviewer's own calls
+#: are counted separately, by ``recruiter.MAX_ROUNDS``.
+MAX_DRAFT_CALLS = 4
 
 #: Where the saved text came from. Recorded because the two are not the same
 #: thing to a person deciding whether to send it.
@@ -214,6 +224,17 @@ class GeneratedLetter:
     #: run, and a report that cannot tell them apart would let somebody credit
     #: the feedback loop for a letter written without any of it.
     examples_used: int = 0
+    #: The strict recruiter's last reading of the text being returned, or None
+    #: when it was not reviewed — the reviewer was switched off, did not
+    #: answer, or the text is the rule-based fallback, which no model wrote.
+    verdict: Verdict | None = None
+    #: How many reviews this letter went through.
+    reviews: int = 0
+
+    @property
+    def review_passes(self) -> bool | None:
+        """Whether the reviewer passed it; None when it was not reviewed."""
+        return self.verdict.passes if self.verdict is not None else None
 
     @property
     def cost_usd(self) -> float | None:
@@ -424,7 +445,15 @@ async def generate(
     broke: list[RuleViolation] = []
     feedback = ""
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    # The best guard-clean draft so far and the reviewer's verdict on it. The
+    # review never blocks: whatever it thinks, this is returned once the
+    # rounds or the calls run out.
+    best: GeneratedLetter | None = None
+    verdict: Verdict | None = None
+    reviews = 0
+    guard_failures = 0
+
+    for attempt in range(1, MAX_DRAFT_CALLS + 1):
         try:
             result = await router.complete_json(
                 PROMPT_NAME,
@@ -440,8 +469,9 @@ async def generate(
             )
         except LLMError as exc:
             # The provider is gone, or it failed to produce the shape twice.
-            # Both mean there is no model answer to check; the fallback is the
-            # answer. Narrow on purpose: a bug in this module must still raise.
+            # Both mean there is no model answer to check; the best draft so
+            # far, or the fallback, is the answer. Narrow on purpose: a bug in
+            # this module must still raise.
             logger.warning(
                 "letters.generate.no_model_answer",
                 vacancy_id=str(context.vacancy.vacancy_id),
@@ -456,31 +486,65 @@ async def generate(
             result.value.letter, scope=RuleScope.COVER_LETTER, rules=owner_rules
         )
         blocking = workshop.hard(violations)
-        if not problems and not blocking:
-            return GeneratedLetter(
-                text=result.value.letter,
-                language=result.value.language or context.language,
-                source="model",
-                attempts=attempt,
-                rejected_for=tuple(seen),
-                usages=tuple(usages),
-                addressed_skills=tuple(result.value.addressed_skills),
-                acknowledged_gaps=tuple(result.value.acknowledged_gaps),
-                broke_rules=tuple(broke),
-                warnings=workshop.soft(violations),
-                examples_used=len(examples),
+        if problems or blocking:
+            seen.extend(problems)
+            broke.extend(blocking)
+            guard_failures += 1
+            logger.warning(
+                "letters.generate.rejected",
+                vacancy_id=str(context.vacancy.vacancy_id),
+                attempt=attempt,
+                problems=[problem.value for problem in problems],
+                broken_rules=[violation.rule_id for violation in blocking],
             )
+            if guard_failures >= MAX_ATTEMPTS:
+                break
+            # The guards' faults first, and the reviewer's instructions still
+            # standing, so a rewrite does not fix one by undoing the other.
+            feedback = feedback_for(problems, blocking) + (
+                review_feedback(verdict) if verdict is not None else ""
+            )
+            continue
 
-        seen.extend(problems)
-        broke.extend(blocking)
-        feedback = feedback_for(problems, blocking)
-        logger.warning(
-            "letters.generate.rejected",
-            vacancy_id=str(context.vacancy.vacancy_id),
-            attempt=attempt,
-            problems=[problem.value for problem in problems],
-            broken_rules=[violation.rule_id for violation in blocking],
+        draft = GeneratedLetter(
+            text=result.value.letter,
+            language=result.value.language or context.language,
+            source="model",
+            attempts=attempt,
+            rejected_for=tuple(seen),
+            usages=tuple(usages),
+            addressed_skills=tuple(result.value.addressed_skills),
+            acknowledged_gaps=tuple(result.value.acknowledged_gaps),
+            broke_rules=tuple(broke),
+            warnings=workshop.soft(violations),
+            examples_used=len(examples),
         )
+        if not settings.review_enabled or reviews >= recruiter.MAX_ROUNDS:
+            return _reviewed(best or draft, context, reviews, usages)
+
+        verdict, review_usage = await recruiter.review(
+            "cover_letter", draft.text, context, router=router
+        )
+        if review_usage is not None:
+            usages.append(review_usage)
+        if verdict is None:
+            # No reviewer answered: the guards are the gate, and this draft
+            # passed them. A previous draft the reviewer did score is not
+            # preferred over a newer one nobody could score.
+            return _reviewed(draft, context, reviews, usages)
+        reviews += 1
+        draft = replace(draft, verdict=verdict)
+        if best is None or best.verdict is None or verdict.lowest >= best.verdict.lowest:
+            best = draft
+        if verdict.passes or reviews >= recruiter.MAX_ROUNDS:
+            return _reviewed(best, context, reviews, usages)
+        feedback = review_feedback(verdict)
+
+    if best is not None:
+        # The calls ran out after a reviewed draft: it passed every guard, so it
+        # is returned rather than the rule-based letter, whatever the reviewer
+        # still wanted.
+        return _reviewed(best, context, reviews, usages)
 
     fallback = compose_fallback(context)
     logger.warning(
@@ -544,6 +608,33 @@ async def generate(
         # feature has to avoid.
         examples_used=0,
     )
+
+
+def review_feedback(verdict: Verdict) -> str:
+    """The reviewer's instructions as the next draft's feedback block."""
+    return (
+        "\n## A strict recruiter reviewed your previous letter\n\n"
+        f"{verdict.feedback()}\n\n"
+        "Write the letter again and return the JSON object and nothing else.\n"
+    )
+
+
+def _reviewed(
+    letter: GeneratedLetter, context: LetterContext, reviews: int, usages: list[LLMUsage]
+) -> GeneratedLetter:
+    """The letter being returned, with the review count and every call's usage."""
+    verdict = letter.verdict
+    logger.info(
+        "letters.generate.reviewed",
+        vacancy_id=str(context.vacancy.vacancy_id),
+        reviews=reviews,
+        passes=verdict.passes if verdict is not None else None,
+        relevance=verdict.relevance if verdict is not None else None,
+        evidence=verdict.evidence if verdict is not None else None,
+        clarity=verdict.clarity if verdict is not None else None,
+        form=verdict.form if verdict is not None else None,
+    )
+    return replace(letter, reviews=reviews, usages=tuple(usages))
 
 
 def _unwritable_detail(problems: list[LetterProblem], violations: tuple[RuleViolation, ...]) -> str:

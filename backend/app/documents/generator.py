@@ -42,11 +42,12 @@ the checks here have to run before anything is written anywhere.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.config import settings
 from app.core.exceptions import AppError, LLMError
 from app.core.logging import get_logger
 from app.db.enums import RuleScope
@@ -62,11 +63,14 @@ from app.documents.context import (
 )
 from app.documents.guard import CVProblem
 from app.documents.render import CVArrangement, JobChoice, fits_one_page, to_text
-from app.letters.context import fold, text_language
+from app.letters.context import AchievementFact, LetterContext, fold, text_language
+from app.letters.context import build_context as letter_context
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN
 from app.llm import usage as usage_ledger
 from app.llm.base import LLMTask, LLMUsage
 from app.llm.router import LLMRouter, get_router
+from app.review import recruiter
+from app.review.recruiter import Verdict
 from app.workshop import rules as workshop_rules
 from app.workshop.rules import RuleSpec, RuleViolation
 
@@ -83,6 +87,12 @@ PROMPT_NAME = "tailored_cv"
 #: settled on, and for the same reason: a third attempt has not been observed to
 #: fix what a second did not, and the fallback is always available.
 MAX_ATTEMPTS = 2
+
+#: Model calls for arrangements in all — guard corrections and review rewrites
+#: together — so two guard failures and two review rounds can both happen in
+#: one generation. The reviewer's own calls are bounded by
+#: ``recruiter.MAX_ROUNDS``.
+MAX_DRAFT_CALLS = 4
 
 #: Where the arrangement came from.
 CVSource = Literal["model", "fallback"]
@@ -187,6 +197,16 @@ class GeneratedCV:
     #: Kubernetes in it" is worth seeing in a log.
     rejected_for: tuple[CVProblem, ...] = ()
     usages: tuple[LLMUsage, ...] = ()
+    #: The strict recruiter's last reading of this arrangement's text, or None
+    #: when it was not reviewed (switched off, no answer, or the fallback).
+    verdict: Verdict | None = None
+    #: How many reviews the arrangement went through.
+    reviews: int = 0
+
+    @property
+    def review_passes(self) -> bool | None:
+        """Whether the reviewer passed it; None when it was not reviewed."""
+        return self.verdict.passes if self.verdict is not None else None
 
     @property
     def cost_usd(self) -> float | None:
@@ -316,7 +336,13 @@ async def generate(
     seen_rules: list[RuleViolation] = []
     feedback = ""
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    best: GeneratedCV | None = None
+    verdict: Verdict | None = None
+    reviews = 0
+    guard_failures = 0
+    reviewer_context = review_context(context)
+
+    for attempt in range(1, MAX_DRAFT_CALLS + 1):
         try:
             result = await router.complete_json(
                 PROMPT_NAME,
@@ -326,8 +352,9 @@ async def generate(
             )
         except LLMError as exc:
             # The provider is gone, or it failed to produce the shape twice.
-            # Both mean there is no answer to check; the fallback is the answer.
-            # Narrow on purpose: a bug in this module must still raise.
+            # Both mean there is no answer to check; the best reviewed
+            # arrangement so far, or the fallback, is the answer. Narrow on
+            # purpose: a bug in this module must still raise.
             logger.warning(
                 "documents.generate.no_model_answer",
                 vacancy_id=str(context.vacancy.vacancy_id),
@@ -342,26 +369,55 @@ async def generate(
         broken = workshop_rules.hard(
             workshop_rules.check(to_text(arrangement, context), scope=RuleScope.CV, rules=rules)
         )
-        if not problems and not broken:
-            return GeneratedCV(
-                arrangement=arrangement,
-                text=to_text(arrangement, context),
-                source="model",
-                attempts=attempt,
-                rejected_for=tuple(seen),
-                usages=tuple(usages),
+        if problems or broken:
+            seen.extend(problems)
+            seen_rules.extend(broken)
+            guard_failures += 1
+            logger.warning(
+                "documents.generate.rejected",
+                vacancy_id=str(context.vacancy.vacancy_id),
+                attempt=attempt,
+                problems=[problem.value for problem in problems],
+                broke_rules=[violation.rule_id for violation in broken],
             )
+            if guard_failures >= MAX_ATTEMPTS:
+                break
+            feedback = _feedback(problems, broken) + (
+                review_feedback(verdict) if verdict is not None else ""
+            )
+            continue
 
-        seen.extend(problems)
-        seen_rules.extend(broken)
-        feedback = _feedback(problems, broken)
-        logger.warning(
-            "documents.generate.rejected",
-            vacancy_id=str(context.vacancy.vacancy_id),
-            attempt=attempt,
-            problems=[problem.value for problem in problems],
-            broke_rules=[violation.rule_id for violation in broken],
+        draft = GeneratedCV(
+            arrangement=arrangement,
+            text=to_text(arrangement, context),
+            source="model",
+            attempts=attempt,
+            rejected_for=tuple(seen),
+            usages=tuple(usages),
         )
+        if not settings.review_enabled:
+            return _reviewed(draft, context, reviews, usages)
+
+        verdict, review_usage = await recruiter.review(
+            "cv", draft.text, reviewer_context, router=router
+        )
+        if review_usage is not None:
+            usages.append(review_usage)
+        if verdict is None:
+            return _reviewed(draft, context, reviews, usages)
+        reviews += 1
+        draft = replace(draft, verdict=verdict)
+        if best is None or best.verdict is None or verdict.lowest >= best.verdict.lowest:
+            best = draft
+        if verdict.passes or reviews >= recruiter.MAX_ROUNDS:
+            return _reviewed(best, context, reviews, usages)
+        feedback = review_feedback(verdict)
+
+    if best is not None:
+        # The calls ran out after a reviewed arrangement that passed every
+        # guard: it is returned rather than the rule-based one, whatever the
+        # reviewer still wanted. The review polishes; the guards are the gate.
+        return _reviewed(best, context, reviews, usages)
 
     fallback = compose_fallback(context)
     logger.warning(
@@ -413,6 +469,54 @@ async def generate(
         rejected_for=tuple(seen),
         usages=tuple(usages),
     )
+
+
+def review_context(context: CVContext) -> LetterContext:
+    """What the reviewer is shown about the vacancy and the candidate.
+
+    The reviewer reads a letter-shaped context (vacancy facts, profile facts),
+    built here from the CV's own. Its achievements are the CV's — every stored
+    bullet of every job this CV may show, with its employer — so it can say
+    "lead the first job with the RAG bullet" about a bullet that exists, and
+    nothing it is shown is something the CV could not print.
+    """
+    achievements = tuple(
+        AchievementFact(company=entry.company, title=entry.title, text=text)
+        for entry in context.experience
+        for text in entry.achievements
+    )
+    profile = context.profile.model_copy(update={"achievements": achievements})
+    return letter_context(context.vacancy, profile, language=context.language)
+
+
+def review_feedback(verdict: Verdict) -> str:
+    """The reviewer's instructions, restated in the terms a CV can meet them in."""
+    return (
+        "\n## A strict recruiter reviewed the CV your previous answer produced\n\n"
+        f"{verdict.feedback()}\n\n"
+        "Meet these instructions the only ways this CV can change: which bullets "
+        "each job shows and in what order (by index — the text is printed as "
+        "recorded), the order and spelling of skills, the headline, and the "
+        "summary. Return the JSON object and nothing else.\n"
+    )
+
+
+def _reviewed(
+    generated: GeneratedCV, context: CVContext, reviews: int, usages: list[LLMUsage]
+) -> GeneratedCV:
+    """The CV being returned, with the review count and every call's usage."""
+    verdict = generated.verdict
+    logger.info(
+        "documents.generate.reviewed",
+        vacancy_id=str(context.vacancy.vacancy_id),
+        reviews=reviews,
+        passes=verdict.passes if verdict is not None else None,
+        relevance=verdict.relevance if verdict is not None else None,
+        evidence=verdict.evidence if verdict is not None else None,
+        clarity=verdict.clarity if verdict is not None else None,
+        form=verdict.form if verdict is not None else None,
+    )
+    return replace(generated, reviews=reviews, usages=tuple(usages))
 
 
 def _feedback(problems: Sequence[CVProblem], broken: Sequence[RuleViolation]) -> str:

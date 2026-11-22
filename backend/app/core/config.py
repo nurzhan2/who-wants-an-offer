@@ -387,6 +387,11 @@ class Settings(BaseSettings):
     #: winning track ("original"), or one generated for the vacancy
     #: ("tailored"). Original until the generated one is as good as the owner's.
     worker_attach_cv: Literal["original", "tailored"] = "original"
+    #: Whether a model-written CV or letter is read by the strict recruiter
+    #: (``app.review.recruiter``) and rewritten on its instructions before it is
+    #: returned. At most two reviews and two more model calls per document; the
+    #: rule-based fallbacks are never reviewed. Off saves those calls.
+    review_enabled: bool = True
     #: Minutes between two runs of a source, overriding its built-in
     #: ``min_interval``. The built-ins were set for a laptop that crawled once a
     #: day; a server watching for postings that just appeared wants Telegram and
