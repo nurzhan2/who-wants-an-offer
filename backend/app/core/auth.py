@@ -32,7 +32,15 @@ OPEN_PREFIXES: tuple[str, ...] = ("/health",)
 
 
 def _token_guarded(path: str) -> bool:
-    return path.startswith(f"{settings.api_v1_prefix}/applications")
+    """Paths with their own guard: the agent's bearer token, and the Mini App,
+    whose every API call carries Telegram's signed ``initData`` (see
+    ``app.core.telegram_auth``) and whose page and bundles carry no data."""
+    return (
+        path.startswith(f"{settings.api_v1_prefix}/applications")
+        or path.startswith(f"{settings.api_v1_prefix}/miniapp")
+        or path in {"/tg", "/tg.html"}
+        or path.startswith("/assets/")
+    )
 
 
 def password_from(header: str | None) -> str | None:

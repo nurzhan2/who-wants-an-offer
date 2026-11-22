@@ -10,6 +10,16 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  // Two pages: the dashboard, and the Telegram Mini App (tg.html), which is
+  // opened from the bot and authenticates with Telegram's signed initData.
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        tg: fileURLToPath(new URL('./tg.html', import.meta.url)),
+      },
+    },
+  },
   server: {
     port: 5173,
     // Keep the browser on one origin in dev so CORS never masks a real bug.

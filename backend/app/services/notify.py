@@ -160,3 +160,17 @@ async def _post(
         logger.warning("notify.refused", method=method, status=response.status_code)
         return False
     return True
+
+
+async def set_menu_button(url: str, text: str = "Открыть") -> bool:
+    """Put the Mini App on the bot's menu button in the owner's chat."""
+    if not configured():
+        return False
+    return await _post(
+        "setChatMenuButton",
+        client=None,
+        json={
+            "chat_id": settings.telegram_chat_id,
+            "menu_button": {"type": "web_app", "text": text, "web_app": {"url": url}},
+        },
+    )

@@ -387,6 +387,9 @@ class Settings(BaseSettings):
     #: winning track ("original"), or one generated for the vacancy
     #: ("tailored"). Original until the generated one is as good as the owner's.
     worker_attach_cv: Literal["original", "tailored"] = "original"
+    #: The Telegram Mini App's address, e.g. https://<api domain>/tg.html. When
+    #: set, the worker puts an «Открыть» button on the bot's chat menu.
+    miniapp_url: str | None = None
     telegram_outreach_enabled: bool = False
     telegram_outreach_max_per_day: Annotated[int, Field(ge=0, le=50)] = 10
 

@@ -166,6 +166,8 @@ async def main() -> None:
             await workshop_seed.apply_seed(session)
     except Exception as exc:  # a seed that fails must not keep the worker down
         logger.warning("worker.workshop_seed_failed", error=type(exc).__name__)
+    if settings.miniapp_url:
+        await notify.set_menu_button(settings.miniapp_url)
     await catch_up(sender=sender)
     tasks = [
         asyncio.create_task(fast_loop(sender), name="worker-fast"),
