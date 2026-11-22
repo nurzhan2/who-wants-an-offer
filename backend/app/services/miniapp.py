@@ -32,6 +32,9 @@ from app.services import bot, outreach, react
 LOCAL = timezone(timedelta(hours=5))
 #: How far back the day list goes.
 DAYS_BACK = 14
+#: The Mini App is for browsing, so its default floor is lower than the
+#: notification floor: a 65 that the owner reads and skips costs nothing.
+BROWSE_MIN_SCORE = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +71,18 @@ class Item:
         }
 
 
-async def won_items(session: AsyncSession, *, days: int = DAYS_BACK) -> list[Item]:
-    """Every vacancy of the last ``days`` days, with the track that won it, best first."""
+async def won_items(
+    session: AsyncSession,
+    *,
+    days: int = DAYS_BACK,
+    min_score: int = BROWSE_MIN_SCORE,
+    with_hh: bool = False,
+) -> list[Item]:
+    """Every vacancy of the last ``days`` days, with the track that won it, best first.
+
+    hh is left out unless asked for: its vacancies go through the agent's queue
+    on the dashboard, and the owner browses everything else here.
+    """
     prefs = await bot.load_prefs(session)
     since = datetime.now(UTC) - timedelta(days=days)
     when = func.coalesce(Vacancy.published_at, Vacancy.first_seen_at)
@@ -86,7 +99,7 @@ async def won_items(session: AsyncSession, *, days: int = DAYS_BACK) -> list[Ite
             )
             .join(Vacancy, Vacancy.id == Match.vacancy_id)
             .where(
-                Match.score >= prefs.floor,
+                Match.score >= min_score,
                 Match.bucket != MatchBucket.FILTERED,
                 Vacancy.is_active.is_(True),
                 when >= since,
@@ -112,6 +125,8 @@ async def won_items(session: AsyncSession, *, days: int = DAYS_BACK) -> list[Ite
         if winner is None or winner.profile_id != profile_id or winner.slug in prefs.tracks_off:
             continue
         source, url = sources.get(vacancy_id, ("?", ""))
+        if not with_hh and source == settings.agent_source_slug:
+            continue
         items.append(
             Item(
                 vacancy_id,

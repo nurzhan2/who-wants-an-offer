@@ -8,7 +8,7 @@ from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.telegram_auth import require_owner
@@ -18,17 +18,27 @@ from app.services import miniapp
 router = APIRouter(prefix="/miniapp", tags=["miniapp"], dependencies=[Depends(require_owner)])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
+MinScore = Annotated[int, Query(ge=0, le=100)]
+WithHh = Annotated[bool, Query()]
 
 
 @router.get("/home", summary="Statistics and the days with vacancies")
-async def home(session: Session) -> dict[str, Any]:
-    items = await miniapp.won_items(session)
+async def home(
+    session: Session, min_score: MinScore = miniapp.BROWSE_MIN_SCORE, with_hh: WithHh = False
+) -> dict[str, Any]:
+    items = await miniapp.won_items(session, min_score=min_score, with_hh=with_hh)
     return {"stats": await miniapp.stats(session, items), "days": miniapp.by_day(items)}
 
 
 @router.get("/days/{day}/{slug}", summary="One track's vacancies of one day, best first")
-async def day_track(day: date, slug: str, session: Session) -> list[dict[str, Any]]:
-    items = await miniapp.won_items(session)
+async def day_track(
+    day: date,
+    slug: str,
+    session: Session,
+    min_score: MinScore = miniapp.BROWSE_MIN_SCORE,
+    with_hh: WithHh = False,
+) -> list[dict[str, Any]]:
+    items = await miniapp.won_items(session, min_score=min_score, with_hh=with_hh)
     return [item.brief() for item in miniapp.of_day_and_track(items, day, slug)]
 
 

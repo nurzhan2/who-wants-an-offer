@@ -69,10 +69,19 @@ async function call<T>(path: string, method: 'GET' | 'POST' = 'GET'): Promise<T>
   return (await response.json()) as T
 }
 
+export interface Filter {
+  minScore: number
+  withHh: boolean
+}
+
+function query(filter: Filter): string {
+  return `?min_score=${String(filter.minScore)}&with_hh=${String(filter.withHh)}`
+}
+
 export const api = {
-  home: () => call<Home>('/home'),
-  dayTrack: (day: string, slug: string) =>
-    call<Brief[]>(`/days/${day}/${encodeURIComponent(slug)}`),
+  home: (filter: Filter) => call<Home>(`/home${query(filter)}`),
+  dayTrack: (day: string, slug: string, filter: Filter) =>
+    call<Brief[]>(`/days/${day}/${encodeURIComponent(slug)}${query(filter)}`),
   vacancy: (id: string) => call<Detail>(`/vacancies/${id}`),
   writeLetter: (id: string) => call<{ letter: string }>(`/vacancies/${id}/letter`, 'POST'),
   sendCv: (id: string) => call<{ sent: boolean }>(`/vacancies/${id}/cv`, 'POST'),

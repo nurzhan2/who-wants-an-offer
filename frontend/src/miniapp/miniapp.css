@@ -209,3 +209,24 @@ button:disabled {
 .bar button {
   flex: 1;
 }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+button.chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--section);
+  color: var(--text);
+  font-size: 13px;
+}
+
+button.chip.active {
+  background: var(--button);
+  color: var(--button-text);
+}

@@ -107,7 +107,9 @@ async def test_days_tracks_and_one_vacancy(
     headers = {"X-Telegram-Init-Data": signed(OWNER)}
 
     home = (
-        await async_client.get(f"{settings.api_v1_prefix}/miniapp/home", headers=headers)
+        await async_client.get(
+            f"{settings.api_v1_prefix}/miniapp/home?with_hh=true", headers=headers
+        )
     ).json()
     today = datetime.now(miniapp.LOCAL).date().isoformat()
     assert home["days"] == [{"date": today, "count": 2, "tracks": {"backend": 1, "llm": 1}}]
@@ -115,7 +117,7 @@ async def test_days_tracks_and_one_vacancy(
 
     listed = (
         await async_client.get(
-            f"{settings.api_v1_prefix}/miniapp/days/{today}/backend", headers=headers
+            f"{settings.api_v1_prefix}/miniapp/days/{today}/backend?with_hh=true", headers=headers
         )
     ).json()
     assert [item["vacancy_id"] for item in listed] == [str(hh)], "llm lost hh to backend"
@@ -153,3 +155,38 @@ async def test_the_letter_button_writes_once_within_budget(
     assert await miniapp.write_letter(db_session, v) == "Синтетическое."
     assert await miniapp.write_letter(db_session, v) == "Синтетическое."
     assert written == [v]
+
+
+@pytest.mark.db
+async def test_hh_is_hidden_unless_asked_and_the_floor_is_the_caller_s(
+    db_session: AsyncSession, profiles: Any, vacancies: Any, matches: Any
+) -> None:
+    """hh goes through the agent's queue; the Mini App browses everything else."""
+    backend = await profiles.create(make_profile(slug="backend", priority=0))
+    hh = await _posting(vacancies, "h", "hh")
+    board = await _posting(vacancies, "r", "remotive")
+    await matches.bulk_upsert(
+        [make_match(backend.id, hh, Decimal("90")), make_match(backend.id, board, Decimal("65"))]
+    )
+
+    default = {item.vacancy_id for item in await miniapp.won_items(db_session)}
+    assert default == {board}, "hh hidden, and 65 clears the browsing floor of 60"
+    strict = await miniapp.won_items(db_session, min_score=70, with_hh=True)
+    assert {item.vacancy_id for item in strict} == {hh}
+
+
+@pytest.mark.unit
+def test_a_server_reads_telegram_and_the_alert_mailbox_often(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source's built-in interval is a laptop's; the server's override wins."""
+    from datetime import timedelta
+
+    from app.sources.telegram import TelegramSource
+
+    source = TelegramSource.__new__(TelegramSource)
+    started = datetime(2026, 11, 22, 9, 0, tzinfo=UTC)
+    monkeypatch.setattr(settings, "source_min_minutes", {"telegram": 15})
+    assert source.cooldown_until(started) == started + timedelta(minutes=15)
+    monkeypatch.setattr(settings, "source_min_minutes", {})
+    assert source.cooldown_until(started) == started + timedelta(hours=6)

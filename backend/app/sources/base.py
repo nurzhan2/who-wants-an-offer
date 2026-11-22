@@ -523,9 +523,11 @@ class BaseSource(ABC):
 
     def cooldown_until(self, last_started_at: datetime | None) -> datetime | None:
         """When this source may next be asked, or None when it may be now."""
-        if last_started_at is None or not self.min_interval:
+        override = settings.source_min_minutes.get(self.slug)
+        interval = timedelta(minutes=override) if override is not None else self.min_interval
+        if last_started_at is None or not interval:
             return None
-        return last_started_at + self.min_interval
+        return last_started_at + interval
 
     def is_due(self, last_started_at: datetime | None, *, now: datetime | None = None) -> bool:
         """Whether ``min_interval`` has elapsed since the last *attempt*.

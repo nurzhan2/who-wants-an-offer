@@ -10,9 +10,9 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { api, type Brief, type Day, type Detail, type Stats } from './api'
+import { api, type Brief, type Day, type Detail, type Filter, type Stats } from './api'
 import { notify, open, tap, tg } from './telegram'
 
 type Screen =
@@ -74,6 +74,24 @@ const SOURCE_NAMES: Record<string, string> = {
 }
 
 export function App() {
+  const [filter, setFilterState] = useState<Filter>(loadFilter)
+  const setFilter = useCallback((next: Filter) => {
+    setFilterState(next)
+    try {
+      window.localStorage.setItem(FILTER_KEY, JSON.stringify(next))
+    } catch {
+      // storage unavailable: the choice lasts this session only
+    }
+  }, [])
+  const value = useMemo(() => ({ filter, setFilter }), [filter, setFilter])
+  return (
+    <FilterContext.Provider value={value}>
+      <Screens />
+    </FilterContext.Provider>
+  )
+}
+
+function Screens() {
   const [screen, setScreen] = useState<Screen>({ kind: 'home' })
 
   const up = useCallback(() => {
@@ -122,8 +140,63 @@ export function App() {
   return <TrackScreen screen={screen} onChange={setScreen} />
 }
 
+const SCORES = [60, 70, 80] as const
+const FILTER_KEY = 'miniapp-filter'
+const DEFAULT_FILTER: Filter = { minScore: 60, withHh: false }
+
+function loadFilter(): Filter {
+  try {
+    const raw = window.localStorage.getItem(FILTER_KEY)
+    return raw ? { ...DEFAULT_FILTER, ...(JSON.parse(raw) as Partial<Filter>) } : DEFAULT_FILTER
+  } catch {
+    return DEFAULT_FILTER
+  }
+}
+
+const FilterContext = createContext<{ filter: Filter; setFilter: (f: Filter) => void }>({
+  filter: DEFAULT_FILTER,
+  setFilter: () => undefined,
+})
+
+function useFilter() {
+  return useContext(FilterContext)
+}
+
 function useHome() {
-  return useQuery({ queryKey: ['home'], queryFn: api.home, staleTime: 60_000 })
+  const { filter } = useFilter()
+  return useQuery({
+    queryKey: ['home', filter],
+    queryFn: () => api.home(filter),
+    staleTime: 60_000,
+  })
+}
+
+function FilterBar() {
+  const { filter, setFilter } = useFilter()
+  return (
+    <div className="filters">
+      <span className="muted small">Оценка от</span>
+      {SCORES.map((score) => (
+        <button
+          key={score}
+          className={filter.minScore === score ? 'chip active' : 'chip'}
+          onClick={() => {
+            setFilter({ ...filter, minScore: score })
+          }}
+        >
+          {score}
+        </button>
+      ))}
+      <button
+        className={filter.withHh ? 'chip active' : 'chip'}
+        onClick={() => {
+          setFilter({ ...filter, withHh: !filter.withHh })
+        }}
+      >
+        {filter.withHh ? 'hh: показан' : 'hh: скрыт'}
+      </button>
+    </div>
+  )
 }
 
 function HomeScreen({ onDay }: { onDay: (day: string) => void }) {
@@ -137,8 +210,9 @@ function HomeScreen({ onDay }: { onDay: (day: string) => void }) {
       <h1>Offer Digest</h1>
       <StatsBlock stats={data.stats} />
       <h2>Вакансии по дням</h2>
+      <FilterBar />
       {data.days.length === 0 ? (
-        <p className="muted">За две недели подходящих вакансий нет. Проверьте /filters в боте.</p>
+        <p className="muted">За две недели подходящих вакансий нет. Снизьте порог оценки.</p>
       ) : (
         <div className="list">
           {data.days.map((day) => (
@@ -234,9 +308,10 @@ function DayScreen({ day, onTrack }: { day: string; onTrack: (slug: string) => v
 type TrackState = Extract<Screen, { kind: 'track' }>
 
 function TrackScreen({ screen, onChange }: { screen: TrackState; onChange: (s: Screen) => void }) {
+  const { filter } = useFilter()
   const list = useQuery({
-    queryKey: ['day-track', screen.day, screen.slug],
-    queryFn: () => api.dayTrack(screen.day, screen.slug),
+    queryKey: ['day-track', screen.day, screen.slug, filter],
+    queryFn: () => api.dayTrack(screen.day, screen.slug, filter),
     staleTime: 60_000,
   })
   if (list.isLoading) return <Loading />

@@ -62,7 +62,11 @@ class Prefs:
 
     @property
     def floor(self) -> Decimal:
-        return Decimal(max(settings.agent_queue_min_score, self.min_score or 0))
+        # The owner's choice wins in both directions: «от 70» used to be
+        # swallowed by the queue's floor of 78 and changed nothing.
+        return Decimal(
+            self.min_score if self.min_score is not None else settings.agent_queue_min_score
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {

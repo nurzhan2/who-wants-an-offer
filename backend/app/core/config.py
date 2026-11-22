@@ -387,6 +387,15 @@ class Settings(BaseSettings):
     #: winning track ("original"), or one generated for the vacancy
     #: ("tailored"). Original until the generated one is as good as the owner's.
     worker_attach_cv: Literal["original", "tailored"] = "original"
+    #: Minutes between two runs of a source, overriding its built-in
+    #: ``min_interval``. The built-ins were set for a laptop that crawled once a
+    #: day; a server watching for postings that just appeared wants Telegram and
+    #: the alert mailbox read often. JSON, e.g. {"telegram": 15}. Sources with a
+    #: published request budget (remotive, remoteok…) keep their own intervals
+    #: unless named here.
+    source_min_minutes: dict[str, int] = Field(
+        default_factory=lambda: {"telegram": 15, "email_alerts": 10, "hh": 30}
+    )
     #: The Telegram Mini App's address, e.g. https://<api domain>/tg.html. When
     #: set, the worker puts an «Открыть» button on the bot's chat menu.
     miniapp_url: str | None = None
