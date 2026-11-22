@@ -151,6 +151,9 @@ class ProfileFacts(Facts):
     skills: tuple[SkillFact, ...] = ()
     #: Every job's bullets, newest job first, each in the resume's own order.
     achievements: tuple[AchievementFact, ...] = ()
+    #: The work format the resume states: "full" (remote), "hybrid", "no", or
+    #: None when it says nothing. Printed in a CV's header; never inferred.
+    remote: str | None = None
 
     @property
     def recorded_text(self) -> str:

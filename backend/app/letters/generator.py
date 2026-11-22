@@ -612,25 +612,25 @@ PHRASES: dict[str, dict[str, str]] = {
     "ru": {
         "greeting": "Здравствуйте!",
         "identity": "Я — {headline}.",
-        "identity_stack": "Я — {headline}; из стека вакансии в работе использую {skills}.",
-        "stack_only": "Из стека вакансии в работе использую {skills}.",
+        "identity_stack": "Я — {headline}; из стека вакансии работаю с {skills}.",
+        "stack_only": "Из стека вакансии работаю с {skills}.",
         "proofs": "Что сделал в {company}:",
         "proofs_no_company": "Что сделал на последнем месте работы:",
         "other": "Также работаю с {skills}.",
-        "closing": "Готов созвониться и рассказать подробнее.",
+        "closing": "Буду рад созвониться на этой неделе и рассказать о проектах подробнее.",
         "sign_off": "С уважением, {name}",
         "sign_off_bare": "С уважением",
         "and": "и",
     },
     "en": {
         "greeting": "Hello,",
-        "identity": "I'm a {headline}.",
-        "identity_stack": "I'm a {headline}, and of the stack you list I work with {skills}.",
-        "stack_only": "Of the stack you list, I work with {skills}.",
+        "identity": "I'm {article} {headline}.",
+        "identity_stack": "I'm {article} {headline}; from your stack, I work with {skills}.",
+        "stack_only": "From your stack, I work with {skills}.",
         "proofs": "At {company}, I:",
         "proofs_no_company": "In my current role, I:",
         "other": "I also work with {skills}.",
-        "closing": "Happy to do a technical call this week.",
+        "closing": "Happy to do a technical call this week and walk you through the work.",
         "sign_off": "Best regards,\n{name}",
         "sign_off_bare": "Best regards",
         "and": "and",
@@ -684,11 +684,15 @@ def compose_fallback(context: LetterContext) -> FallbackLetter:
     named, unnameable = _nameable(context.overlap.matched)
     skills = _enumerate([spelling for _, spelling in named], words["and"]) if named else ""
     if headline and skills:
-        paragraphs.append(words["identity_stack"].format(headline=headline, skills=skills))
+        paragraphs.append(
+            words["identity_stack"].format(
+                article=_article(headline), headline=headline, skills=skills
+            )
+        )
     elif skills:
         paragraphs.append(words["stack_only"].format(skills=skills))
     elif headline:
-        paragraphs.append(words["identity"].format(headline=headline))
+        paragraphs.append(words["identity"].format(article=_article(headline), headline=headline))
 
     for proof in _proofs(context, language):
         if len("\n\n".join((*paragraphs, proof))) <= FALLBACK_TARGET_CHARS:
@@ -699,7 +703,11 @@ def compose_fallback(context: LetterContext) -> FallbackLetter:
     # quote — a profile parsed before migration 0020, or one whose bullets are
     # all in the other language — it is the only evidence left, and without it
     # the letter is a greeting and a sign-off.
-    other = [name for name in context.overlap.other[:3] if is_safe(name)]
+    # Names a quoted proof already carries are not repeated.
+    quoted = "\n".join(paragraphs).casefold()
+    other = [
+        name for name in context.overlap.other if is_safe(name) and name.casefold() not in quoted
+    ][:3]
     if other:
         line = words["other"].format(skills=_enumerate(other, words["and"]))
         if len("\n\n".join((*paragraphs, line))) <= FALLBACK_TARGET_CHARS:
@@ -719,6 +727,26 @@ def compose_fallback(context: LetterContext) -> FallbackLetter:
         addressed_skills=tuple(written for _, written in named if skills and skills in text),
         unnameable_skills=unnameable,
     )
+
+
+#: Initial letters whose name starts with a vowel sound when an acronym is read
+#: out: "an LLM engineer", "an ML engineer", "an SRE".
+_VOWEL_SOUND_ACRONYM = frozenset("AEFHILMNORSX")
+
+
+def _article(phrase: str) -> str:
+    """ "a" or "an" before an English job title.
+
+    By sound, as far as a table can tell: a vowel letter, or an all-capitals
+    first word whose first letter is read with a vowel ("LLM", "ML", "SRE").
+    The Russian template has no article and ignores the value.
+    """
+    first = phrase.split()[0] if phrase.split() else ""
+    if not first:
+        return "a"
+    if first.isupper() and len(first) > 1:
+        return "an" if first[0] in _VOWEL_SOUND_ACRONYM else "a"
+    return "an" if first[0].lower() in "aeiou" else "a"
 
 
 def _proofs(context: LetterContext, language: str) -> list[str]:

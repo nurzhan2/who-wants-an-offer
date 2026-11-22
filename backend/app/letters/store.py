@@ -177,6 +177,7 @@ async def load_profile_facts(
         locations=tuple(str(item) for item in profile.locations),
         languages=_languages(profile.languages),
         skills=tuple(_skill_fact(skill) for skill in skills),
+        remote=profile.remote_pref.value if profile.remote_pref else None,
         achievements=tuple(
             AchievementFact(company=job.company, title=job.title, text=text.strip())
             for job in jobs

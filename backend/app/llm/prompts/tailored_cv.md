@@ -14,11 +14,14 @@ summary, and it must be in that language.
 ## What you are deciding
 
 1. **The order of the skills.** Put what this vacancy asks for first, in the
-   vacancy's own order, then the rest by how useful they are for this job.
+   vacancy's own order, then the rest by how useful they are for this job. The
+   document prints them on labelled lines (backend, data, LLM, …) itself; your
+   order decides which line comes first and the order within each line.
 2. **The word each skill is shown under.** An employer's parser searches for
    literal strings, so a skill the vacancy calls `PostgreSQL` should be shown as
-   `PostgreSQL` and not as `постгрес`. You may only do this where it is *the
-   same skill under another name*. Showing `Python` as `Kubernetes` is rejected
+   `PostgreSQL` and not as `постгрес`; otherwise use the spelling the resume
+   writes (`Python`, not `python`). You may only rename where it is *the same
+   skill under another name*. Showing `Python` as `Kubernetes` is rejected
    in code.
 3. **Which jobs appear, and in what order.** Refer to each by the `ref` number
    it is given below. Keep reverse chronological order unless you have a strong
@@ -30,7 +33,9 @@ summary, and it must be in that language.
    or none. Prefer bullets with a measurable result and bullets that use the
    vacancy's stack. The bullet text is printed exactly as recorded — you never
    write, shorten or translate it, and an index that is not listed, or the same
-   index twice, is rejected in code.
+   index twice, is rejected in code. The CV must fit one page: if it would run
+   longer, the last bullets of the oldest jobs are dropped in code, so put the
+   ones that matter first.
 5. **Which of a job's technologies are shown.** Narrow each job's stack to what
    matters for this vacancy. You may only remove entries, never add one: a
    technology attributed to an employer who never used it is the worst kind of

@@ -41,7 +41,7 @@ from app.documents import store as document_store
 from app.documents.context import CVContext, build_context
 from app.documents.review import DocumentReview, ReviewedDocument
 from app.letters import store as letter_store
-from app.letters.context import ProfileFacts
+from app.letters.context import ProfileFacts, text_language
 from app.letters.service import write_letter
 from app.llm.router import LLMRouter
 from app.services import contacts as contact_service
@@ -178,6 +178,20 @@ async def write_cv(
             kind=DocumentKind.CV,
             reason="no_experience",
             hard_rules=described,
+        )
+
+    bullets_language = text_language(context.achievement_text, default=context.language)
+    if bullets_language != context.language:
+        # The labels follow the posting and the bullets are the owner's own
+        # words, so this CV will mix two languages. Nothing here can fix that
+        # honestly — translating a bullet is rewriting it — so it is said in the
+        # log, where a profile in the posting's language is the remedy.
+        logger.warning(
+            "documents.cv.language_mismatch",
+            vacancy_id=str(vacancy_id),
+            profile_id=str(profile.profile_id),
+            posting=context.language,
+            achievements=bullets_language,
         )
 
     try:

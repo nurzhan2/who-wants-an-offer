@@ -75,6 +75,7 @@ from docx.shared import Cm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.documents import skill_groups
 from app.documents.context import (
     CVContext,
     EducationEntry,
@@ -82,6 +83,7 @@ from app.documents.context import (
     SkillChoice,
     render_period,
 )
+from app.letters.context import text_language
 
 #: What the file is. Kept as a constant because it is written into every stored
 #: row and read back to pick a media type.
@@ -186,29 +188,73 @@ LANGUAGE_NAMES: dict[str, dict[str, str]] = {
 #: How each CV language says "native".
 NATIVE: dict[str, str] = {"en": "native", "ru": "родной"}
 
-#: The cities this market's candidates live in, as an English CV writes them.
-#: Not a translation of anything the owner wrote about themselves: a city is a
-#: proper name with an established English spelling, and "Алматы" in the
-#: contact line of an English CV is the first thing a remote recruiter reads.
-#: A city not listed here is printed as stored.
-CITY_NAMES_EN: dict[str, str] = {
-    "алматы": "Almaty",
+
+@dataclass(frozen=True, slots=True)
+class Place:
+    """A city as each CV language writes it, with its country and UTC offset."""
+
+    en: str
+    ru: str
+    country_en: str
+    country_ru: str
+    utc: str
+
+
+#: The cities this market's candidates live in. The reference CVs open the
+#: contact line with "Almaty, Kazakhstan (UTC+5)": a remote recruiter's first
+#: two questions are where and which hours, and the city alone answers neither
+#: for someone who has never heard of it. None of this is a claim about the
+#: candidate — it is the geography of the city the profile records — and a
+#: city not listed here is printed exactly as stored, with nothing added.
+#: Kazakhstan has been on a single UTC+5 since March 2024.
+PLACES: tuple[Place, ...] = (
+    Place("Almaty", "Алматы", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Astana", "Астана", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Shymkent", "Шымкент", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Karaganda", "Караганда", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Aktobe", "Актобе", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Atyrau", "Атырау", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Pavlodar", "Павлодар", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Oskemen", "Усть-Каменогорск", "Kazakhstan", "Казахстан", "UTC+5"),
+    Place("Bishkek", "Бишкек", "Kyrgyzstan", "Кыргызстан", "UTC+6"),
+    Place("Tashkent", "Ташкент", "Uzbekistan", "Узбекистан", "UTC+5"),
+    Place("Moscow", "Москва", "Russia", "Россия", "UTC+3"),
+    Place("Saint Petersburg", "Санкт-Петербург", "Russia", "Россия", "UTC+3"),
+    Place("Minsk", "Минск", "Belarus", "Беларусь", "UTC+3"),
+    Place("Tbilisi", "Тбилиси", "Georgia", "Грузия", "UTC+4"),
+)
+
+#: Other spellings of the same cities, as resumes write them.
+PLACE_ALIASES: dict[str, str] = {
     "алма-ата": "Almaty",
-    "астана": "Astana",
+    "alma-ata": "Almaty",
     "нур-султан": "Astana",
-    "шымкент": "Shymkent",
-    "караганда": "Karaganda",
-    "актобе": "Aktobe",
-    "атырау": "Atyrau",
-    "павлодар": "Pavlodar",
+    "nur-sultan": "Astana",
     "усть-каменогорск": "Oskemen",
-    "бишкек": "Bishkek",
-    "ташкент": "Tashkent",
-    "москва": "Moscow",
-    "санкт-петербург": "Saint Petersburg",
-    "минск": "Minsk",
-    "тбилиси": "Tbilisi",
+    "ust-kamenogorsk": "Oskemen",
+    "st. petersburg": "Saint Petersburg",
+    "санкт петербург": "Saint Petersburg",
+    "karagandy": "Karaganda",
 }
+
+
+def place_of(city: str) -> Place | None:
+    """The place a stored city names, in either alphabet, or None."""
+    key = " ".join(city.split()).casefold()
+    key = PLACE_ALIASES.get(key, key).casefold()
+    return next(
+        (place for place in PLACES if key in (place.en.casefold(), place.ru.casefold())), None
+    )
+
+
+#: How the profile's work-format preference is written in the header. Only the
+#: two that say something an employer filters on; "no" (on-site only) is the
+#: default reading of a CV with a city on it and is not printed.
+WORK_FORMAT: dict[str, dict[str, str]] = {
+    "en": {"full": "Open to remote", "hybrid": "Hybrid"},
+    "ru": {"full": "удалённо", "hybrid": "гибрид"},
+}
+
 
 #: What a bullet line starts with, in the file and in the text alike.
 BULLET = "• "
@@ -327,6 +373,8 @@ class LineKind(StrEnum):
     BULLET = "bullet"
     #: The quiet line under a job's bullets: its technologies.
     NOTE = "note"
+    #: "Backend: FastAPI, Django" — a labelled line of the skills section.
+    GROUP = "group"
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,24 +433,48 @@ def _bullets(entry: ExperienceEntry, job: JobChoice) -> list[str]:
     return shown
 
 
-def _contact_line(context: CVContext) -> str:
-    """Phone, email, city and links on one line, separated by middle dots.
+def _contact_lines(context: CVContext) -> list[str]:
+    """Where and which format on one line; how to reply on the next.
 
-    One line and not a table: see the module docstring. The order puts the two
-    the auditor looks for first, so that a document truncated by anything
-    downstream keeps the parts an employer needs to reply. The city is written
-    the English way in an English CV when it is one of the cities this market's
-    candidates live in.
+    The order is the reference CVs': location (with country and UTC offset for a
+    known city) and the work format the profile records, then email, phone,
+    Telegram — where recruiters on this market start — and the code links. Two
+    lines because one carrying all of it wraps at an arbitrary middle dot on A4;
+    split here, each half reads as a unit. Lines and not a table: see the module
+    docstring. Links are printed as their addresses, which name themselves
+    ("github.com/…"), so neither line carries a "Label:" a parser could mistake
+    for a section.
     """
     contacts = context.contacts
+    language = context.language
+    where: list[str] = []
     city = (contacts.city or "").strip()
-    if context.language == "en":
-        city = CITY_NAMES_EN.get(city.casefold(), city)
-    parts = [
-        value.strip() for value in (contacts.phone, contacts.email, city) if value and value.strip()
-    ]
-    parts.extend(f"{label}: {address}" for label, address in contacts.links)
-    return " · ".join(parts)
+    if city:
+        place = place_of(city)
+        if place is None:
+            where.append(city)
+        elif language == "ru":
+            where.append(f"{place.ru}, {place.country_ru} ({place.utc})")
+        else:
+            where.append(f"{place.en}, {place.country_en} ({place.utc})")
+    work_format = WORK_FORMAT.get(language, WORK_FORMAT["en"]).get(context.profile.remote or "")
+    if work_format:
+        where.append(work_format)
+    reach = [value.strip() for value in (contacts.email, contacts.phone) if value and value.strip()]
+    links = sorted(contacts.links, key=lambda link: link[0] != "Telegram")
+    reach.extend(_link_text(label, address) for label, address in links)
+    return [line for line in (" · ".join(where), " · ".join(p for p in reach if p)) if line]
+
+
+def _link_text(label: str, address: str) -> str:
+    """One link as the header prints it: a Telegram handle, or the bare address."""
+    address = address.strip()
+    if label == "Telegram":
+        handle = address.rsplit("/", 1)[-1].lstrip("@")
+        return f"Telegram @{handle}" if handle else ""
+    if "." in address or "/" in address:
+        return address
+    return f"{label} {address}"
 
 
 def _languages_line(languages: tuple[str, ...], language: str) -> str:
@@ -449,15 +521,23 @@ def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
         lines.append(Line(LineKind.NAME, name))
     if headline := arrangement.headline.strip():
         lines.append(Line(LineKind.HEADLINE, headline))
-    if contact_line := _contact_line(context):
-        lines.append(Line(LineKind.CONTACT, contact_line))
+    lines.extend(Line(LineKind.CONTACT, text) for text in _contact_lines(context))
 
     if summary := arrangement.summary.strip():
         lines.extend((Line(LineKind.HEADING, headings.summary), Line(LineKind.TEXT, summary)))
 
     if arrangement.skills:
-        shown = ", ".join(skill.shown_as for skill in arrangement.skills)
-        lines.extend((Line(LineKind.HEADING, headings.skills), Line(LineKind.TEXT, shown)))
+        lines.append(Line(LineKind.HEADING, headings.skills))
+        groups = skill_groups.grouped(
+            [(skill.canonical_name, skill.shown_as) for skill in arrangement.skills], language
+        )
+        if groups is None:
+            shown = ", ".join(skill.shown_as for skill in arrangement.skills)
+            lines.append(Line(LineKind.TEXT, shown))
+        else:
+            lines.extend(
+                Line(LineKind.GROUP, f"{label}: {', '.join(names)}") for label, names in groups
+            )
 
     resolved = _resolved(arrangement, context)
     if resolved:
@@ -481,6 +561,73 @@ def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
     return lines
 
 
+#: Characters of body text one line of the A4 text block holds at the body
+#: size, measured on the samples LibreOffice lays out (Carlito, metrically
+#: Calibri). A bullet loses its hanging indent; the header and the notes are
+#: set smaller and hold more.
+CHARS_PER_LINE = 95
+CHARS_PER_BULLET_LINE = 92
+CHARS_PER_SMALL_LINE = 108
+
+#: Cyrillic letters are wider than Latin ones in the same face: a line of
+#: Russian holds about this share of the characters a line of English does.
+CYRILLIC_WIDTH_SHARE = 0.9
+
+#: Body lines one page holds, in the units of :func:`estimated_lines`.
+#: Measured, not derived: LibreOffice lays a full A4 text block out at about
+#: 63 units in both languages, and a heading kept with its next line can push
+#: the last section over with a few lines still free — so the budget keeps
+#: that much in reserve. A profile estimated at 61 spilled two sections onto a
+#: second page; the samples at 48 and 50 fill three quarters of one.
+PAGE_LINES = 56.0
+
+#: What each kind of line costs beyond its wrapped text: a larger size, or the
+#: space set before and after it.
+_LINE_COST: dict[LineKind, float] = {
+    LineKind.NAME: 1.9,
+    LineKind.HEADLINE: 1.15,
+    LineKind.CONTACT: 0.0,
+    LineKind.HEADING: 1.6,
+    LineKind.ENTRY: 0.6,
+    LineKind.BULLET: 0.15,
+    LineKind.NOTE: 0.0,
+    LineKind.GROUP: 0.08,
+    LineKind.TEXT: 0.08,
+}
+
+
+def estimated_lines(arrangement: CVArrangement, context: CVContext) -> float:
+    """How much of a page this arrangement fills, in body lines.
+
+    An estimate, and deliberately a slightly pessimistic one: rendering is
+    Word's or LibreOffice's, not this module's, and the only question asked of
+    the number is "does it fit on one page" (:data:`PAGE_LINES`). It wraps each
+    line at a measured number of characters and adds what the line's size and
+    spacing cost. A one-page CV is the research's rule for under three years of
+    experience (docs/WORKSHOP-RESEARCH.md, L1/L2), and a CV whose last section
+    spills onto page two looks unfinished.
+    """
+    total = 0.0
+    for line in layout(arrangement, context):
+        text = line.rendered
+        if line.kind is LineKind.BULLET:
+            width = CHARS_PER_BULLET_LINE
+        elif line.kind in (LineKind.CONTACT, LineKind.NOTE):
+            width = CHARS_PER_SMALL_LINE
+        else:
+            width = CHARS_PER_LINE
+        if text_language(text, default="en") == "ru":
+            width = int(width * CYRILLIC_WIDTH_SHARE)
+        wrapped = max(1, -(-len(text) // width))
+        total += wrapped + _LINE_COST.get(line.kind, 0.0)
+    return total
+
+
+def fits_one_page(arrangement: CVArrangement, context: CVContext) -> bool:
+    """Whether :func:`estimated_lines` stays within :data:`PAGE_LINES`."""
+    return estimated_lines(arrangement, context) <= PAGE_LINES
+
+
 def to_lines(arrangement: CVArrangement, context: CVContext) -> list[str]:
     """The document as plain lines, a blank one before every heading."""
     out: list[str] = []
@@ -498,10 +645,15 @@ def _job_title_line(entry: ExperienceEntry) -> str:
 
 
 def _education_line(item: EducationEntry) -> Line:
-    """One degree on one line, its year at the right, omitting what was not stated."""
+    """One degree on one line, its year at the right, omitting what was not stated.
+
+    Degree and field first, then the institution — "BSc, Computer Science —
+    KazNU" — the way the reference CVs write it: the degree is what a filter
+    asks about, the institution what a reader checks second.
+    """
     head = ", ".join(part for part in (item.degree, item.field) if part)
-    text = f"{item.institution}{f' — {head}' if head else ''}"
-    return Line(LineKind.TEXT, text, str(item.end_year) if item.end_year else "")
+    text = f"{head} — {item.institution}" if head else item.institution
+    return Line(LineKind.ENTRY, text, str(item.end_year) if item.end_year else "")
 
 
 def to_text(arrangement: CVArrangement, context: CVContext) -> str:
@@ -590,6 +742,11 @@ def _draw(document: Any, line: Line) -> None:
         spacing.first_line_indent = Cm(-BULLET_INDENT_CM)
         spacing.space_after = Pt(2)
         paragraph.add_run(line.text)
+    elif line.kind is LineKind.GROUP:
+        label, _, values = line.text.partition(": ")
+        paragraph.add_run(f"{label}: ").bold = True
+        paragraph.add_run(values)
+        spacing.space_after = Pt(1)
     elif line.kind is LineKind.NOTE:
         run = paragraph.add_run(line.text)
         run.italic = True

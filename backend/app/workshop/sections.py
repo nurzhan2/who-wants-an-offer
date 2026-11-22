@@ -33,9 +33,13 @@ an exact match always wins over an alias.
 
 **A label is not always a heading.** ``Стек: Python, FastAPI`` under a job is a
 line of that job, not the start of a section called «Стек», and reading it as
-one cut the experience section of every generated CV in half. The few labels
-that only ever introduce a line of a job (:data:`INLINE_LABELS`) are left in
-the body.
+one cut the experience section of every generated CV in half. The same goes for
+the labelled lines a skills section is written in — ``Backend: FastAPI,
+Django`` — which the CV renderer prints (``app.documents.skill_groups``). The
+labels that only ever introduce a line inside a section (:data:`INLINE_LABELS`)
+are left in the body, whatever case the rest of the line is in, and a skills
+line's values are counted one by one: «в навыках не меньше 21 пункта» counts
+skills, not the lines they are grouped on.
 
 What this deliberately does not do is parse structure the way a resume parser
 would. It answers "how many things are listed under this heading", which is what
@@ -111,8 +115,42 @@ SECTION_ALIASES: tuple[frozenset[str], ...] = (
     frozenset({"проекты", "projects"}),
 )
 
-#: Labels that introduce one line of a job rather than a section, folded.
-INLINE_LABELS = frozenset({"стек", "stack", "techstack", "технологии", "technologies"})
+#: The labels of a CV's skill lines, folded. Must hold every label in
+#: ``app.documents.skill_groups.LABELS``; a test compares the two, since this
+#: module may not import that one (the documents package imports the workshop).
+SKILL_GROUP_LABELS = frozenset(
+    {
+        "programming",
+        "backend",
+        "llm&ai",
+        "frontend",
+        "data&infrastructure",
+        "tools&testing",
+        "other",
+        "языкипрограммирования",
+        "бэкенд",
+        "llmиии",
+        "фронтенд",
+        "данныеиинфраструктура",
+        "инструментыитесты",
+        "другое",
+    }
+)
+
+#: Labels that introduce one line inside a section rather than a section,
+#: folded: a job's stack line, and the skill lines above.
+INLINE_LABELS = (
+    frozenset({"стек", "stack", "techstack", "технологии", "technologies"}) | SKILL_GROUP_LABELS
+)
+
+
+def _inline_label(line: str) -> str | None:
+    """The folded label of a "Label: values" line whose label is inline, or None."""
+    head, colon, tail = line.strip().partition(":")
+    if not colon or not tail.strip() or len(head.split()) > MAX_HEADING_WORDS:
+        return None
+    folded = fold_heading(head)
+    return folded if folded in INLINE_LABELS else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +254,13 @@ def sections_of(document: str) -> tuple[Section, ...]:
             found.append(Section(heading=heading, items=items_of(body), body="\n".join(body)))
 
     for line in lines:
+        if _inline_label(line) is not None:
+            # A stack or skills line: part of the section it sits in, even when
+            # its values are all capitals ("Stack: AWS, GCP") and would
+            # otherwise read as a heading of their own.
+            if heading is not None:
+                body.append(line)
+            continue
         inline = _split_heading_line(line)
         if inline is not None:
             close()
@@ -266,11 +311,23 @@ def items_of(lines: list[str]) -> tuple[str, ...]:
 
     One item per non-empty line, except when the body is a single line holding
     separated values — then one item per value. The single-line test is what
-    makes ``Python, Go, SQL`` three items and a one-sentence paragraph one.
+    makes ``Python, Go, SQL`` three items and a one-sentence paragraph one. A
+    labelled skills line (``Backend: FastAPI, Django``) is always counted by its
+    values, so grouping a skills section does not change its count.
     """
     filled = [line.strip() for line in lines if line.strip()]
     if not filled:
         return ()
+
+    if any(_inline_label(line) in SKILL_GROUP_LABELS for line in filled):
+        items: list[str] = []
+        for line in filled:
+            if _inline_label(line) in SKILL_GROUP_LABELS:
+                values = _INLINE_SEPARATORS.split(line.partition(":")[2])
+                items.extend(value.strip() for value in values if value.strip())
+            else:
+                items.append(_BULLET.sub("", line).strip())
+        return tuple(items)
 
     if len(filled) == 1:
         parts = [part.strip(" \t·") for part in _INLINE_SEPARATORS.split(filled[0])]

@@ -93,7 +93,7 @@ def skills_block(context: CVContext) -> str:
                 f"{skill.years:g} years" if skill.years is not None else None,
                 skill.level or None,
                 f'resume writes it "{skill.spelling}"'
-                if skill.spelling.lower() != skill.canonical_name.lower()
+                if skill.spelling != skill.canonical_name
                 else None,
             )
             if part

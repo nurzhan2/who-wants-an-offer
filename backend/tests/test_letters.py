@@ -794,7 +794,7 @@ def test_a_company_whose_name_is_a_domain_does_not_become_a_link() -> None:
     fallback = compose_fallback(context)
 
     assert "Kaspi.kz" not in fallback.text
-    assert "из стека вакансии в работе использую Python и PostgreSQL" in fallback.text
+    assert "из стека вакансии работаю с Python и PostgreSQL" in fallback.text
     assert find_problems(fallback.text) == []
 
 
@@ -817,7 +817,7 @@ def test_a_matched_skill_is_never_dropped_the_way_a_company_name_is() -> None:
 
     fallback = compose_fallback(context)
 
-    assert "использую Ceph." in fallback.text
+    assert "работаю с Ceph." in fallback.text
     assert fallback.addressed_skills == ("Ceph",)
     assert fallback.unnameable_skills == ()
     assert find_problems(fallback.text) == []
@@ -941,7 +941,7 @@ def test_an_english_posting_gets_a_short_english_fallback_letter() -> None:
 
     assert text.startswith("Hello,")
     assert "I'm applying for the Backend Engineer role at Northwind." in text
-    assert "I work with Python and PostgreSQL" in text
+    assert "I'm a Backend Engineer; from your stack, I work with Python and PostgreSQL." in text
     assert f"• {ACHIEVEMENTS[1].text}" in text
     assert f"• {ACHIEVEMENTS[2].text}" in text
     assert "Kubernetes" not in text, "a requirement not held is not named"

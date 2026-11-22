@@ -61,7 +61,7 @@ from app.documents.context import (
     SkillChoice,
 )
 from app.documents.guard import CVProblem
-from app.documents.render import CVArrangement, JobChoice, to_text
+from app.documents.render import CVArrangement, JobChoice, fits_one_page, to_text
 from app.letters.context import fold, text_language
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN
 from app.llm import usage as usage_ledger
@@ -337,7 +337,7 @@ async def generate(
             break
 
         usages.append(usage_ledger.record(result.usage))
-        arrangement = to_arrangement(result.value, context)
+        arrangement = fit_to_page(to_arrangement(result.value, context), context)
         problems = inspect(arrangement, context)
         broken = workshop_rules.hard(
             workshop_rules.check(to_text(arrangement, context), scope=RuleScope.CV, rules=rules)
@@ -484,7 +484,7 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     ):
         summary = ""
 
-    return CVArrangement(
+    arrangement = CVArrangement(
         headline=context.allowed_headlines[0] if context.allowed_headlines else "",
         summary=summary,
         skills=tuple(skills[:MAX_FALLBACK_SKILLS]),
@@ -506,3 +506,39 @@ def compose_fallback(context: CVContext) -> CVArrangement:
             for position, entry in enumerate(context.experience)
         ),
     )
+    return fit_to_page(arrangement, context)
+
+
+#: The fewest bullets trimming leaves a job with: two for a recent role, which
+#: is the research's floor for one (S11, S27), one for an older role.
+MIN_BULLETS_RECENT_JOB = 2
+MIN_BULLETS_OLDER_JOB = 1
+
+
+def fit_to_page(arrangement: CVArrangement, context: CVContext) -> CVArrangement:
+    """The arrangement with bullets dropped, oldest job first, until it fits a page.
+
+    A person fitting a CV to one page compresses the oldest role first and the
+    least relevant line of it first, and this does the same: it removes the last
+    bullet of the job furthest down the page, one at a time, re-measuring with
+    :func:`app.documents.render.estimated_lines` after each, and never takes a
+    recent job below :data:`MIN_BULLETS_RECENT_JOB` or an older one below
+    :data:`MIN_BULLETS_OLDER_JOB`. "Last" is the arrangement's own order: for a
+    model's answer that is its least relevant choice, for the rule-based one the
+    resume's last bullet.
+
+    Only bullets are ever removed, so nothing can be added to a document by
+    fitting it, and a profile too large to fit even at the floors is returned at
+    the floors rather than refused — a CV that runs a few lines long is a
+    formatting fault, not a reason to hand over nothing.
+    """
+    jobs = list(arrangement.experience)
+    current = arrangement
+    for index in range(len(jobs) - 1, -1, -1):
+        floor = MIN_BULLETS_RECENT_JOB if index < RECENT_JOBS else MIN_BULLETS_OLDER_JOB
+        while not fits_one_page(current, context) and len(jobs[index].bullets) > floor:
+            jobs[index] = jobs[index].model_copy(update={"bullets": jobs[index].bullets[:-1]})
+            current = arrangement.model_copy(update={"experience": tuple(jobs)})
+        if fits_one_page(current, context):
+            break
+    return current

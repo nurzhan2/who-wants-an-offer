@@ -125,6 +125,9 @@ class CVProblem(StrEnum):
     #: The profile records achievements and the arrangement shows none of them:
     #: a CV of titles and dates, which is the document the owner called garbage.
     NO_ACHIEVEMENTS_SHOWN = "no_achievements_shown"
+    #: The summary is a list of technologies rather than sentences — the other
+    #: half of what the owner called garbage. The skills section is the list.
+    SUMMARY_IS_A_LIST = "summary_is_a_list"
 
 
 #: What each problem is called where a person reads it. Russian, because that is
@@ -148,6 +151,7 @@ RUSSIAN: dict[CVProblem, str] = {
     CVProblem.REPEATED_ACHIEVEMENT: "одно достижение выбрано дважды",
     CVProblem.TOO_MANY_ACHIEVEMENTS: "у места работы слишком много пунктов",
     CVProblem.NO_ACHIEVEMENTS_SHOWN: "в резюме не показано ни одного достижения",
+    CVProblem.SUMMARY_IS_A_LIST: "блок «о себе» — перечень технологий, а не текст",
 }
 
 #: English, for the retry message the model is shown and for structured logs.
@@ -202,6 +206,11 @@ ENGLISH: dict[CVProblem, str] = {
     CVProblem.NO_ACHIEVEMENTS_SHOWN: (
         "it shows no achievements at all although the jobs have them; choose the "
         "most relevant 2 to 5 for each recent job"
+    ),
+    CVProblem.SUMMARY_IS_A_LIST: (
+        "the summary is a list of technologies; write two or three sentences "
+        "about what the candidate builds and one result from the achievements — "
+        "the skills section is where the list belongs"
     ),
 }
 
@@ -332,6 +341,32 @@ def check_experience(shown: tuple[JobChoice, ...], context: CVContext) -> list[C
     return list(dict.fromkeys(problems))
 
 
+#: Separators a list of technologies is written with.
+_LIST_SEPARATORS = re.compile(r"[,;|·•/]")
+
+#: A summary split on those separators into at least this many pieces, most of
+#: them one or two words long, is a list rather than prose.
+LIST_MIN_PIECES = 5
+LIST_SHORT_PIECE_WORDS = 2
+LIST_SHORT_SHARE = 0.6
+
+
+def reads_as_a_list(text: str) -> bool:
+    """Whether a summary is a run of short comma-separated names, not sentences.
+
+    "Python, FastAPI, PostgreSQL, Docker, Redis, RAG" splits into six one-word
+    pieces; "Python backend engineer building LLM features: FastAPI services,
+    RAG over PostgreSQL/pgvector and eval sets" splits into four, most of them
+    clauses. The thresholds sit between the two, and a false positive costs a
+    regenerated summary (or, in the rule-based CV, an omitted one).
+    """
+    pieces = [piece.split() for piece in _LIST_SEPARATORS.split(text) if piece.strip()]
+    if len(pieces) < LIST_MIN_PIECES:
+        return False
+    short = sum(1 for words in pieces if len(words) <= LIST_SHORT_PIECE_WORDS)
+    return short / len(pieces) >= LIST_SHORT_SHARE
+
+
 def check_summary(summary: str, context: CVContext) -> list[CVProblem]:
     """The one free-text field, held to its length and to the profile.
 
@@ -351,6 +386,8 @@ def check_summary(summary: str, context: CVContext) -> list[CVProblem]:
         problems.append(CVProblem.UNSUPPORTED_CLAIM)
     if unsupported_numbers(summary, context.recorded_text):
         problems.append(CVProblem.UNSUPPORTED_NUMBER)
+    if reads_as_a_list(summary):
+        problems.append(CVProblem.SUMMARY_IS_A_LIST)
     return problems
 
 

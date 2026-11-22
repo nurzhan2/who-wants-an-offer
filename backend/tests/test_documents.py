@@ -2143,3 +2143,207 @@ async def test_achievements_are_stored_and_read_back_for_both_documents(
     assert facts is not None
     assert [item.text for item in facts.achievements] == list(CURRENT_BULLETS)
     assert {item.company for item in facts.achievements} == {"Chocofamily"}
+
+
+# ── the shape of the references: grouped skills, a two-line header ────
+
+
+@pytest.mark.unit
+def test_skills_are_printed_on_labelled_lines_in_the_arrangement_s_order() -> None:
+    """The research's references group skills; a comma dump is what was rejected.
+
+    The vacancy's requirements come first in the arrangement, so their lines
+    come first; a lone language leads the backend line instead of standing on
+    a line of its own.
+    """
+    from app.documents import skill_groups
+
+    choices = [
+        ("python", "Python"),
+        ("postgresql", "PostgreSQL"),
+        ("rag", "RAG"),
+        ("fastapi", "FastAPI"),
+        ("docker", "Docker"),
+        ("pytest", "pytest"),
+        ("figma", "Figma"),
+        ("anthropic api", "Anthropic API"),
+    ]
+
+    lines = skill_groups.grouped(choices, "en")
+
+    assert lines == [
+        ("Backend", ["Python", "FastAPI"]),
+        ("Data & Infrastructure", ["PostgreSQL", "Docker"]),
+        ("LLM & AI", ["RAG", "Anthropic API"]),
+        ("Tools & Testing", ["pytest", "Figma"]),
+    ]
+    assert skill_groups.grouped(choices[:3], "en") is None, "too few to be worth labels"
+
+
+@pytest.mark.unit
+def test_every_skill_line_label_is_known_to_the_workshop() -> None:
+    """The renderer's labels and the section reader's list are one contract.
+
+    A label the workshop does not know would be read as a section heading of its
+    own, and «в навыках не меньше 21 пункта» would count the first line only.
+    """
+    from app.documents.skill_groups import LABELS
+    from app.workshop.sections import SKILL_GROUP_LABELS, fold_heading
+
+    for labels in LABELS.values():
+        for label in labels.values():
+            assert fold_heading(label) in SKILL_GROUP_LABELS, label
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_grouped_skills_are_still_counted_one_by_one(language: str) -> None:
+    """Grouping changes where a skill is printed, never how many there are."""
+    from app.workshop.sections import find_section
+
+    context = english_context() if language == "en" else cv_context(experience=achieving_jobs())
+    arrangement = compose_fallback(context)
+    text = render.to_text(arrangement, context)
+    section = find_section(text, "навыки")
+
+    assert section is not None
+    assert ":" in section.body, "the section is grouped"
+    assert sorted(section.items) == sorted(skill.shown_as for skill in arrangement.skills)
+
+
+@pytest.mark.unit
+def test_a_stack_line_in_capitals_is_not_a_heading() -> None:
+    """ "Stack: AWS, GCP" is all capitals after the label and still a job's line."""
+    from app.workshop.sections import find_section
+
+    text = "EXPERIENCE\nDeveloper — Acme\n• Built a thing.\nStack: AWS, GCP\nDeveloper — Beta\n"
+
+    section = find_section(text, "experience")
+
+    assert section is not None
+    assert "Developer — Beta" in section.items
+
+
+@pytest.mark.unit
+def test_the_header_says_where_which_hours_and_which_format() -> None:
+    """ "Almaty, Kazakhstan (UTC+5) · Open to remote", as the references open.
+
+    The country and offset are the city's geography, not a claim about the
+    candidate; the work format is the profile's own and is printed only when
+    the resume states it. Links are bare addresses and Telegram a handle, so no
+    "Label:" sits in the header.
+    """
+    remote = english_context().profile.model_copy(update={"remote": "full"})
+    context = english_context(profile=remote)
+
+    lines = render.to_text(compose_fallback(context), context).splitlines()
+
+    assert lines[2] == "Almaty, Kazakhstan (UTC+5) · Open to remote"
+    assert lines[3] == ("nurzhan@example.com · +7 701 234 56 78 · github.com/nurzhan")
+    russian = cv_context(
+        profile=profile_facts(remote="hybrid"),
+        contacts=contact_block(links=(("Telegram", "t.me/some_handle"),)),
+    )
+    header = render.to_text(compose_fallback(russian), russian).splitlines()
+    assert header[2] == "Алматы, Казахстан (UTC+5) · гибрид"
+    assert header[3].endswith("· Telegram @some_handle")
+
+
+@pytest.mark.unit
+def test_a_city_this_module_does_not_know_is_printed_as_stored() -> None:
+    """Nothing is added to a place the table cannot vouch for."""
+    context = english_context()
+    context = context.model_copy(
+        update={"contacts": context.contacts.model_copy(update={"city": "Springfield"})}
+    )
+
+    assert "\nSpringfield\n" in render.to_text(compose_fallback(context), context)
+
+
+@pytest.mark.unit
+def test_a_summary_that_is_a_list_of_technologies_is_rejected() -> None:
+    """The rejected CV's summary was a comma dump; sentences pass."""
+    context = cv_context(experience=achieving_jobs())
+
+    dump = guard.check_summary("Python, FastAPI, PostgreSQL, Redis, Docker, Linux, Git", context)
+    prose = guard.check_summary(
+        "Python backend developer building order services on FastAPI and PostgreSQL; "
+        "cut checkout p95 from 840 ms to 210 ms.",
+        context,
+    )
+
+    assert CVProblem.SUMMARY_IS_A_LIST in dump
+    assert CVProblem.SUMMARY_IS_A_LIST not in prose
+
+
+@pytest.mark.unit
+def test_the_fallback_drops_a_profile_summary_that_is_a_list() -> None:
+    """Better no summary than the one the owner called garbage."""
+    profile = profile_facts(summary="Python, FastAPI, PostgreSQL, Docker, Redis, Git, Linux")
+
+    assert compose_fallback(cv_context(profile=profile)).summary == ""
+
+
+@pytest.mark.unit
+def test_the_fallback_drops_a_summary_in_the_other_language() -> None:
+    """A Russian paragraph under SUMMARY is the mixed document the owner rejected."""
+    context = english_context(profile=profile_facts(summary="Бэкенд на Python и FastAPI."))
+
+    assert compose_fallback(context).summary == ""
+
+
+# ── one page ──────────────────────────────────────────────────────────
+
+
+def _long_jobs() -> tuple[ExperienceEntry, ...]:
+    """Three jobs with long bullets: more than an A4 page holds."""
+    text = (
+        "Delivered a change to the order service that cut processing time for {n} internal "
+        "users and documented the rollout for the whole team."
+    )
+    return tuple(
+        ExperienceEntry(
+            ref=index,
+            company=f"Company {index}",
+            title="Backend Developer",
+            start=f"202{4 - index}-01",
+            end=None if index == 0 else f"202{5 - index}-01",
+            is_current=index == 0,
+            achievements=tuple(text.format(n=10 * index + bullet) for bullet in range(6)),
+        )
+        for index in range(3)
+    )
+
+
+@pytest.mark.unit
+def test_a_cv_too_long_for_a_page_loses_the_oldest_job_s_last_bullets_first() -> None:
+    """The compression a person does: the oldest role shrinks before the newest."""
+    from app.documents.generator import fit_to_page
+
+    context = cv_context(experience=_long_jobs())
+    full = CVArrangement(
+        headline="Backend Developer",
+        skills=compose_fallback(context).skills,
+        experience=tuple(JobChoice(ref=index, bullets=(0, 1, 2, 3, 4)) for index in range(3)),
+    )
+    assert not render.fits_one_page(full, context)
+
+    fitted = fit_to_page(full, context)
+
+    assert render.fits_one_page(fitted, context)
+    bullets = [job.bullets for job in fitted.experience]
+    assert bullets[0] == (0, 1, 2, 3, 4), "the newest job is untouched"
+    assert len(bullets[2]) < len(bullets[1]) or len(bullets[2]) == 1
+    for job in bullets:
+        assert job == tuple(range(len(job))), "only the last bullets are dropped"
+
+
+@pytest.mark.unit
+def test_the_rule_based_cv_fits_a_page_even_for_a_long_career() -> None:
+    """The fallback is fitted too, so the owner never gets a page and three lines."""
+    context = cv_context(experience=_long_jobs())
+
+    arrangement = compose_fallback(context)
+
+    assert render.fits_one_page(arrangement, context)
+    assert all(len(job.bullets) >= 1 for job in arrangement.experience)
