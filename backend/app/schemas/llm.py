@@ -47,6 +47,15 @@ class WorkPeriod(StrictModel):
     stack: list[str] = Field(default_factory=list)
     #: fintech, e-commerce, edtech, gamedev...
     domains: list[str] = Field(default_factory=list)
+    #: The resume's bullet points for this job, copied word for word. A flat
+    #: list of strings on purpose: the API refuses structured-output schemas past
+    #: a complexity it does not publish, and a list of records here is the kind
+    #: of nesting that tips it (``anthropic_api`` falls back to plain JSON when
+    #: it does, which works, but costs the constraint).
+    achievements: list[str] = Field(
+        default_factory=list,
+        description="This job's bullet points, each copied verbatim from the resume.",
+    )
 
 
 class ExtractedSkill(StrictModel):

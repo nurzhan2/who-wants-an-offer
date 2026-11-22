@@ -363,6 +363,13 @@ class ProfileExperience(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stack: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     #: fintech, e-commerce, gamedev... as the extraction recorded them.
     domains: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    #: The resume's own bullets for this job, verbatim and in its order (since
+    #: migration 0020). A generated CV picks among them by index and prints the
+    #: chosen ones exactly as stored, so a result or a number can only reach a
+    #: document by having been written by the owner first.
+    achievements: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
 
     profile: Mapped[CandidateProfile] = relationship(back_populates="experience")
 

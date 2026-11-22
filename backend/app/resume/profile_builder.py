@@ -17,6 +17,7 @@ both the API and the logs.
 """
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -164,6 +165,10 @@ def to_experience(extraction: ProfileExtraction) -> list[ExperienceCreate]:
     "YYYY-MM", or None where the resume gave none — because this is the last
     place they could be quietly changed and the whole point of storing them is
     that a generated document cannot.
+
+    Achievements are the same kind of quotation and are treated the same way:
+    trimmed, bullet markers removed, and otherwise kept as the resume wrote
+    them. See :func:`clean_achievements` for the little that is done to them.
     """
     rows: list[ExperienceCreate] = []
     for period in extraction.work_periods:
@@ -181,9 +186,49 @@ def to_experience(extraction: ProfileExtraction) -> list[ExperienceCreate]:
                 is_current=period.is_current,
                 stack=[name.strip() for name in period.stack if name.strip()],
                 domains=[name.strip() for name in period.domains if name.strip()],
+                achievements=clean_achievements(period.achievements),
             )
         )
     return rows
+
+
+#: Most bullets kept per job. A resume with more than this under one employer is
+#: a duty list rather than a set of results, and nothing downstream shows more
+#: than five; the cap only stops a pathological extraction from filling a row.
+MAX_ACHIEVEMENTS_PER_JOB = 12
+
+#: Longest bullet kept, in characters. A real bullet is one or two lines; past
+#: this the extraction has glued a paragraph together, and a CV line that long
+#: is not one an employer reads.
+MAX_ACHIEVEMENT_CHARS = 400
+
+#: A bullet glyph or list number at the start of an extracted line. The model is
+#: asked for the text without one, and sometimes keeps it anyway; stored with
+#: the glyph, a bullet would print twice once the renderer adds its own. A
+#: number counts as a marker only when a space follows it, so "3.5x faster"
+#: keeps its figure.
+_LEADING_MARKER = re.compile(
+    r"^\s*(?:[-*\u2022\u2013\u2014\u00b7\u25aa\u25cf\u25cb\u25e6\u25ba\u2713\u2714]\s*|\d{1,2}[.)]\s+)"
+)
+
+
+def clean_achievements(raw: list[str]) -> list[str]:
+    """The job's bullets as stored: verbatim, minus the bullet glyph and blanks.
+
+    Nothing is reworded, merged or translated — a generated document prints
+    these strings as they are, and the guarantee that a number in a CV is the
+    owner's own rests on nobody between the resume and the renderer having
+    touched them. Internal whitespace is collapsed, because a line break inside
+    a bullet is the PDF's layout and not the author's text. Duplicates go: the
+    same line read twice off a two-column page is one achievement.
+    """
+    kept: list[str] = []
+    for item in raw:
+        text = " ".join(_LEADING_MARKER.sub("", item).split())
+        if not text or len(text) > MAX_ACHIEVEMENT_CHARS or text in kept:
+            continue
+        kept.append(text)
+    return kept[:MAX_ACHIEVEMENTS_PER_JOB]
 
 
 async def _record_ats_report(

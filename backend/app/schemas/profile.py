@@ -118,6 +118,8 @@ class ExperienceCreate(BaseModel):
     is_current: bool = False
     stack: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
+    #: The job's bullets, verbatim from the resume. See ``ProfileExperience``.
+    achievements: list[str] = Field(default_factory=list)
 
 
 class SkillRead(ReadModel):
