@@ -1909,15 +1909,22 @@ async def test_a_model_that_keeps_pointing_at_missing_bullets_gets_the_fallback(
 
 
 @pytest.mark.unit
-def test_the_fallback_shows_every_achievement_in_the_resume_s_own_order() -> None:
-    """No judgement about relevance: the owner's order, up to the ceiling."""
+def test_the_fallback_leads_each_job_with_the_bullets_that_answer_the_vacancy() -> None:
+    """No judgement, a count: bullets naming the vacancy's requirements first.
+
+    The vacancy asks for Python, PostgreSQL and Kubernetes. The older job's
+    third bullet is the only one naming any of them, so it leads; the rest keep
+    the resume's order. The newest job's first bullet already names PostgreSQL
+    and the others name nothing asked for, so its order is the owner's.
+    """
     context = cv_context(experience=achieving_jobs())
 
     arrangement = compose_fallback(context)
     text = render.to_text(arrangement, context)
 
-    assert [job.bullets for job in arrangement.experience] == [(0, 1, 2, 3), (0, 1, 2, 3)]
-    positions = [text.index(bullet) for bullet in (*CURRENT_BULLETS, *PAST_BULLETS)]
+    assert [job.bullets for job in arrangement.experience] == [(0, 1, 2, 3), (2, 0, 1, 3)]
+    order = [PAST_BULLETS[index] for index in (2, 0, 1, 3)]
+    positions = [text.index(bullet) for bullet in (*CURRENT_BULLETS, *order)]
     assert positions == sorted(positions)
     assert inspect(arrangement, context) == []
 
@@ -2441,6 +2448,8 @@ def test_the_fallback_shows_the_first_projects_with_their_first_bullets() -> Non
 
     arrangement = compose_fallback(context)
 
+    # The eval harness names Python (asked for); the Kafka playground names
+    # nothing the vacancy asked for, so it follows.
     assert [(choice.ref, choice.bullets) for choice in arrangement.projects] == [
         (0, (0, 1)),
         (2, (0,)),

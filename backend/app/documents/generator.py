@@ -575,12 +575,18 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     vacancy asked for come first, in the vacancy's own order and under the
     vacancy's own spelling, and everything else follows in the order the profile
     holds it. Jobs stay in the resume's order — reverse chronological, as they
-    were written — and each shows its whole recorded stack and its achievements
-    in the order the resume listed them, up to :data:`app.documents.context.
-    MAX_BULLETS_PER_JOB` for the two most recent jobs and :data:`app.documents.
-    context.MAX_BULLETS_OLDER_JOB` for older ones. Choosing *which* bullets
-    matter for this vacancy is a judgement, and this branch makes none; the
-    owner's own order is the one a person chose.
+    were written — and each shows its whole recorded stack and its achievements,
+    up to :data:`app.documents.context.MAX_BULLETS_PER_JOB` for the two most
+    recent jobs and :data:`app.documents.context.MAX_BULLETS_OLDER_JOB` for
+    older ones.
+
+    The bullets within a job are put in an order that needs no judgement: those
+    naming more of the vacancy's requirements first (the research's rule for a
+    role, docs/WORKSHOP-RESEARCH.md 4.3), the resume's own order otherwise — so
+    a bullet that names nothing the vacancy asked for never moves ahead of one
+    the owner put first. :func:`relevance` counts, it does not judge. Projects
+    are chosen and ordered the same way, and page fitting then drops from the
+    end, which is now the least relevant line.
 
     The vacancy's spelling is used for a matched skill here, and that is not a
     liberty: ``matched`` means the fold keys agree, so the two strings are two
@@ -619,6 +625,12 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     ):
         summary = ""
 
+    projects = sorted(
+        context.projects,
+        key=lambda project: (
+            -relevance(" ".join((project.name, *project.stack, *project.achievements)), context)
+        ),
+    )
     arrangement = CVArrangement(
         headline=context.allowed_headlines[0] if context.allowed_headlines else "",
         summary=summary,
@@ -627,30 +639,45 @@ def compose_fallback(context: CVContext) -> CVArrangement:
             JobChoice(
                 ref=entry.ref,
                 stack=entry.stack,
-                bullets=tuple(
-                    range(
-                        min(
-                            len(entry.achievements),
-                            MAX_BULLETS_PER_JOB
-                            if position < RECENT_JOBS
-                            else MAX_BULLETS_OLDER_JOB,
-                        )
-                    )
+                bullets=_ranked(
+                    entry.achievements,
+                    context,
+                    MAX_BULLETS_PER_JOB if position < RECENT_JOBS else MAX_BULLETS_OLDER_JOB,
                 ),
             )
             for position, entry in enumerate(context.experience)
         ),
-        # The resume's first projects, each with its first bullets: the owner's
-        # own order is the only judgement this branch makes about them.
         projects=tuple(
             ProjectChoice(
                 ref=project.ref,
-                bullets=tuple(range(min(len(project.achievements), MAX_BULLETS_PER_PROJECT))),
+                bullets=_ranked(project.achievements, context, MAX_BULLETS_PER_PROJECT),
             )
-            for project in context.projects[:MAX_PROJECTS_SHOWN]
+            for project in projects[:MAX_PROJECTS_SHOWN]
         ),
     )
     return fit_to_page(arrangement, context)
+
+
+def relevance(text: str, context: CVContext) -> int:
+    """How many of the vacancy's requirements this text names, as whole words.
+
+    Both spellings of a matched requirement count — the vacancy's and the
+    resume's — because a bullet is the owner's sentence and names the skill
+    the owner's way.
+    """
+    names = {name for name in context.vacancy.key_skills if name.strip()}
+    names.update(skill.possessed_as for skill in context.overlap.matched)
+    found = {fold(name) for name in names if guard.mentions(text, name)}
+    return len(found)
+
+
+def _ranked(achievements: tuple[str, ...], context: CVContext, limit: int) -> tuple[int, ...]:
+    """Indices of the most relevant bullets, most relevant first, resume order on ties."""
+    order = sorted(
+        range(len(achievements)),
+        key=lambda index: (-relevance(achievements[index], context), index),
+    )
+    return tuple(order[:limit])
 
 
 #: The fewest bullets trimming leaves a job with: two for a recent role, which
