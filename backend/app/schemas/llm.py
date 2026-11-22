@@ -87,6 +87,23 @@ class Education(StrictModel):
     end_year: int | None = None
 
 
+class ExtractedProject(StrictModel):
+    """A project outside employment: personal, open-source, hackathon, thesis.
+
+    Flat, like every record here: the API compiles the schema into a grammar
+    and refuses complex ones (``anthropic_api`` falls back to plain JSON).
+    """
+
+    name: str
+    #: The repository or demo address as written, or null.
+    link: str | None = None
+    stack: list[str] = Field(default_factory=list)
+    #: The year it was done or finished, when the resume says.
+    year: int | None = None
+    #: What the resume says about it, one string per bullet or sentence, verbatim.
+    achievements: list[str] = Field(default_factory=list)
+
+
 class ProfileExtraction(StrictModel):
     """Everything the model is asked to read out of a resume."""
 
@@ -105,6 +122,7 @@ class ProfileExtraction(StrictModel):
     skills: list[ExtractedSkill] = Field(default_factory=list)
     languages: list[ExtractedLanguage] = Field(default_factory=list)
     education: list[Education] = Field(default_factory=list)
+    projects: list[ExtractedProject] = Field(default_factory=list)
 
     #: What the resume CLAIMS about total experience. Recorded for comparison
     #: and never written to the profile — see the module docstring.

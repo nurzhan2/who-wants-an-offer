@@ -29,7 +29,13 @@ The prompt itself lives in ``app/llm/prompts/tailored_cv.md``, per docs/ENGINEER
 this module only fills it in.
 """
 
-from app.documents.context import MAX_BULLETS_PER_JOB, MAX_SUMMARY_CHARS, CVContext
+from app.documents.context import (
+    MAX_BULLETS_PER_JOB,
+    MAX_BULLETS_PER_PROJECT,
+    MAX_PROJECTS_SHOWN,
+    MAX_SUMMARY_CHARS,
+    CVContext,
+)
 from app.documents.guard import MIN_SKILLS
 from app.letters.context import LetterContext, clip_description
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN, defang, overlap_block, vacancy_block
@@ -139,6 +145,32 @@ def experience_block(context: CVContext) -> str:
     return "\n".join(lines)
 
 
+def projects_block(context: CVContext) -> str:
+    """Every project outside employment, by ref, with its numbered bullets.
+
+    Shown the way jobs are and for the same reason: choosing needs the text,
+    and the answer can only name numbers.
+    """
+    if not context.projects:
+        return "(the profile records no projects — return an empty list)"
+    lines: list[str] = []
+    for project in context.projects:
+        extra = ", ".join(
+            part for part in (project.link, str(project.year) if project.year else None) if part
+        )
+        lines.append(f"- ref {project.ref}: {project.name}{f' ({extra})' if extra else ''}")
+        if project.stack:
+            lines.append(f"    stack: {', '.join(project.stack)}")
+        if project.achievements:
+            lines.append("    bullets (choose by index; printed exactly as written):")
+            lines.extend(
+                f"      [{index}] {text}" for index, text in enumerate(project.achievements)
+            )
+        else:
+            lines.append("    bullets: none recorded")
+    return "\n".join(lines)
+
+
 def headlines_block(context: CVContext) -> str:
     """The closed set of strings the headline may be.
 
@@ -167,6 +199,9 @@ def variables(context: CVContext, *, feedback: str = "") -> dict[str, str]:
         "candidate_facts": candidate_block(context),
         "skills_block": skills_block(context),
         "experience_block": experience_block(context),
+        "projects_block": projects_block(context),
+        "max_projects": str(MAX_PROJECTS_SHOWN),
+        "max_project_bullets": str(MAX_BULLETS_PER_PROJECT),
         "headlines_block": headlines_block(context),
         "vacancy_facts": vacancy_block(_as_letter_context(context)),
         "skill_overlap": overlap_block(_as_letter_context(context)),

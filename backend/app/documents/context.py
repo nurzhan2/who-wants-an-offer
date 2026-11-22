@@ -74,6 +74,12 @@ MAX_BULLETS_OLDER_JOB = 3
 #: How many of the newest jobs count as recent for :data:`MAX_BULLETS_PER_JOB`.
 RECENT_JOBS = 2
 
+#: Most projects a CV shows, and most bullets each. The research's figure is
+#: one to three projects with one to three bullets (C4); past that the section
+#: competes with the experience it is meant to support.
+MAX_PROJECTS_SHOWN = 3
+MAX_BULLETS_PER_PROJECT = 3
+
 #: Most jobs a CV shows. Beyond this it is a work history rather than a CV, and
 #: the ones past it are old enough that no employer reads them. Selecting which
 #: to drop is the model's job; this is the ceiling it selects under.
@@ -111,6 +117,24 @@ class ExperienceEntry(Facts):
     achievements: tuple[str, ...] = ()
 
 
+class ProjectEntry(Facts):
+    """One project outside employment, exactly as the resume recorded it.
+
+    Referenced by ``ref`` — its index in ``candidate_profile.projects`` — and
+    never retyped, like a job: the name, the link, the year and the bullets are
+    printed from here, and a generated arrangement can only choose the project
+    and which of its bullets to show.
+    """
+
+    ref: int
+    name: str
+    link: str | None = None
+    stack: tuple[str, ...] = ()
+    year: int | None = None
+    #: The resume's own sentences about it, verbatim.
+    achievements: tuple[str, ...] = ()
+
+
 class EducationEntry(Facts):
     """One degree or programme, as the resume recorded it.
 
@@ -141,6 +165,7 @@ class CVContext(BaseModel):
     contacts: ContactBlock
     experience: tuple[ExperienceEntry, ...] = ()
     education: tuple[EducationEntry, ...] = ()
+    projects: tuple[ProjectEntry, ...] = ()
     overlap: SkillOverlap = SkillOverlap()
     #: ISO 639-1. A CV is written in the language of the posting it answers; on
     #: this market that is Russian unless the posting says otherwise.
@@ -155,6 +180,11 @@ class CVContext(BaseModel):
     def by_ref(self) -> dict[int, ExperienceEntry]:
         """The jobs by handle, for resolving an arrangement back to facts."""
         return {entry.ref: entry for entry in self.experience}
+
+    @property
+    def projects_by_ref(self) -> dict[int, ProjectEntry]:
+        """The projects by handle."""
+        return {project.ref: project for project in self.projects}
 
     @property
     def traceable(self) -> frozenset[str]:
@@ -172,6 +202,7 @@ class CVContext(BaseModel):
         """
         keys = {fold(skill.canonical_name) for skill in self.profile.skills}
         keys.update(fold(name) for entry in self.experience for name in entry.stack)
+        keys.update(fold(name) for project in self.projects for name in project.stack)
         return frozenset(key for key in keys if key)
 
     @property
@@ -186,7 +217,9 @@ class CVContext(BaseModel):
         rule-based CV — which prints every bullet — would be refused for quoting
         the resume.
         """
-        return "\n".join(text for entry in self.experience for text in entry.achievements)
+        jobs = [text for entry in self.experience for text in entry.achievements]
+        projects = [text for project in self.projects for text in project.achievements]
+        return "\n".join((*jobs, *projects))
 
     @property
     def recorded_text(self) -> str:
@@ -219,7 +252,15 @@ class CVContext(BaseModel):
             )
             for item in self.education
         ]
-        return "\n".join((self.profile.recorded_text, *jobs, *degrees))
+        projects = [
+            " ".join(
+                str(part)
+                for part in (project.name, project.link, project.year, *project.achievements)
+                if part
+            )
+            for project in self.projects
+        ]
+        return "\n".join((self.profile.recorded_text, *jobs, *projects, *degrees))
 
     @property
     def allowed_headlines(self) -> tuple[str, ...]:
@@ -247,6 +288,7 @@ def build_context(
     contacts: ContactBlock,
     experience: tuple[ExperienceEntry, ...] = (),
     education: tuple[EducationEntry, ...] = (),
+    projects: tuple[ProjectEntry, ...] = (),
     language: str | None = None,
 ) -> CVContext:
     """Assemble the context a tailored CV is generated from.
@@ -263,6 +305,7 @@ def build_context(
         contacts=contacts,
         experience=experience[:MAX_EXPERIENCE_ENTRIES],
         education=education,
+        projects=projects,
         overlap=overlap_of(vacancy.key_skills, profile),
         language=language or posting_language(vacancy),
     )
@@ -348,6 +391,36 @@ def education_from_rows(rows: object) -> tuple[EducationEntry, ...]:
                 end_year=end_year
                 if isinstance(end_year, int) and not isinstance(end_year, bool)
                 else None,
+            )
+        )
+    return tuple(entries)
+
+
+def projects_from_rows(rows: object) -> tuple[ProjectEntry, ...]:
+    """The profile's stored projects as context entries, each with its index.
+
+    The index is the handle, so it is the position in the stored list even when
+    an entry before it is skipped: a stored arrangement naming project 2 must
+    keep meaning the same project.
+    """
+    if not isinstance(rows, list):
+        return ()
+    entries: list[ProjectEntry] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        year = row.get("year")
+        entries.append(
+            ProjectEntry(
+                ref=index,
+                name=name,
+                link=_text(row.get("link")),
+                stack=_strings(row.get("stack")),
+                year=year if isinstance(year, int) and not isinstance(year, bool) else None,
+                achievements=_strings(row.get("achievements")),
             )
         )
     return tuple(entries)

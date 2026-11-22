@@ -311,6 +311,20 @@ class JobChoice(BaseModel):
     bullets: tuple[int, ...] = ()
 
 
+class ProjectChoice(BaseModel):
+    """One project as the CV shows it: which project and which of its bullets.
+
+    Indices into :attr:`app.documents.context.ProjectEntry.achievements`, for
+    the same reason a job's bullets are: the text is the owner's and is read
+    from the profile when the document is built.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ref: int
+    bullets: tuple[int, ...] = ()
+
+
 class CVArrangement(BaseModel):
     """The decisions a generated CV consists of, and nothing else.
 
@@ -338,6 +352,9 @@ class CVArrangement(BaseModel):
     skills: tuple[SkillChoice, ...] = ()
     #: The jobs in the order the CV presents them.
     experience: tuple[JobChoice, ...] = ()
+    #: The projects the CV shows, in order. Empty in every version stored
+    #: before migration 0021, which is exactly what those documents showed.
+    projects: tuple[ProjectChoice, ...] = ()
 
     @field_validator("experience", mode="before")
     @classmethod
@@ -413,6 +430,15 @@ def _resolved(
         if entry is not None:
             resolved.append((entry, job))
     return resolved
+
+
+def _chosen(achievements: tuple[str, ...], indices: tuple[int, ...]) -> list[str]:
+    """The stored bullets at these indices, in this order, unknown ones skipped."""
+    shown: list[str] = []
+    for index in indices:
+        if 0 <= index < len(achievements) and achievements[index] not in shown:
+            shown.append(achievements[index])
+    return shown
 
 
 def _bullets(entry: ExperienceEntry, job: JobChoice) -> list[str]:
@@ -550,6 +576,25 @@ def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
                 label = STACK_LABEL.get(language, STACK_LABEL["en"])
                 lines.append(Line(LineKind.NOTE, f"{label}: {', '.join(job.stack)}"))
 
+    shown_projects = [
+        (project, choice)
+        for choice in arrangement.projects
+        if (project := context.projects_by_ref.get(choice.ref)) is not None
+    ]
+    if shown_projects:
+        lines.append(Line(LineKind.HEADING, headings.projects))
+        for project, choice in shown_projects:
+            title = f"{project.name} — {project.link}" if project.link else project.name
+            year = str(project.year) if project.year else ""
+            lines.append(Line(LineKind.ENTRY, title, year))
+            lines.extend(
+                Line(LineKind.BULLET, f"{BULLET}{text}")
+                for text in _chosen(project.achievements, choice.bullets)
+            )
+            if project.stack:
+                label = STACK_LABEL.get(language, STACK_LABEL["en"])
+                lines.append(Line(LineKind.NOTE, f"{label}: {', '.join(project.stack)}"))
+
     if context.education:
         lines.append(Line(LineKind.HEADING, headings.education))
         lines.extend(_education_line(item) for item in context.education)
@@ -571,15 +616,15 @@ CHARS_PER_SMALL_LINE = 108
 
 #: Cyrillic letters are wider than Latin ones in the same face: a line of
 #: Russian holds about this share of the characters a line of English does.
-CYRILLIC_WIDTH_SHARE = 0.9
+CYRILLIC_WIDTH_SHARE = 0.82
 
 #: Body lines one page holds, in the units of :func:`estimated_lines`.
-#: Measured, not derived: LibreOffice lays a full A4 text block out at about
-#: 63 units in both languages, and a heading kept with its next line can push
-#: the last section over with a few lines still free — so the budget keeps
-#: that much in reserve. A profile estimated at 61 spilled two sections onto a
-#: second page; the samples at 48 and 50 fill three quarters of one.
-PAGE_LINES = 56.0
+#: Measured, not derived, by rendering untrimmed CVs through LibreOffice: a
+#: full A4 text block is about 62 units in either language (a sample estimated
+#: at 60.8 filled 745 of 757 points; a Russian one at 64.8 spilled onto a
+#: second page). A heading kept with its next line can push the last section
+#: over with a line or two still free, so the budget keeps that in reserve.
+PAGE_LINES = 59.5
 
 #: What each kind of line costs beyond its wrapped text: a larger size, or the
 #: space set before and after it.

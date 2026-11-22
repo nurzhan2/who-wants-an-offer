@@ -115,6 +115,13 @@ class CandidateProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: generated CV needed an education section — and a CV without one trips
     #: this project's own ATS audit (``MISSING_SECTIONS``), correctly.
     education: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    #: Personal, open-source and hackathon projects, as ``app.schemas.llm.
+    #: ExtractedProject`` records them: name, link, stack, year and the resume's
+    #: own bullets, verbatim (migration 0021). JSONB here for the reasons
+    #: ``education`` is; a generated CV refers to one by its index in this list.
+    projects: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
 
     raw_text: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dim))

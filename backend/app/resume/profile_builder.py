@@ -133,6 +133,7 @@ def to_profile_create(
         salary_currency=extraction.salary_currency,
         languages=[language.model_dump() for language in extraction.languages],
         education=[degree.model_dump() for degree in extraction.education],
+        projects=to_projects(extraction),
         raw_text=document.raw_text,
         skills=[
             SkillCreate(
@@ -190,6 +191,38 @@ def to_experience(extraction: ProfileExtraction) -> list[ExperienceCreate]:
             )
         )
     return rows
+
+
+#: Most projects kept. A resume listing more is a portfolio page; a CV shows
+#: two or three, and the extraction's first ones are the resume's own lead.
+MAX_PROJECTS = 8
+
+
+def to_projects(extraction: ProfileExtraction) -> list[dict[str, object]]:
+    """The extraction's projects as stored records, bullets cleaned like a job's.
+
+    A project with no name is dropped — there is nothing to print on its line —
+    and so is one whose name is an employer from ``work_periods``: work done in
+    a job belongs to that job's bullets, and printing it twice would make one
+    piece of work look like two.
+    """
+    employers = {period.company.strip().casefold() for period in extraction.work_periods}
+    kept: list[dict[str, object]] = []
+    for project in extraction.projects:
+        name = " ".join(project.name.split())[:200]
+        if not name or name.casefold() in employers:
+            continue
+        link = (project.link or "").strip() or None
+        kept.append(
+            {
+                "name": name,
+                "link": link[:300] if link else None,
+                "stack": [item.strip() for item in project.stack if item.strip()],
+                "year": project.year,
+                "achievements": clean_achievements(project.achievements),
+            }
+        )
+    return kept[:MAX_PROJECTS]
 
 
 #: Most bullets kept per job. A resume with more than this under one employer is

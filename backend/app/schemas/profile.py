@@ -151,6 +151,9 @@ class CandidateProfileCreate(BaseModel):
     #: Degrees, as the extraction recorded them. A JSONB column on the profile,
     #: like ``languages`` beside it: a short list of flat records, read whole.
     education: list[dict[str, Any]] = Field(default_factory=list)
+    #: Projects outside employment, as the extraction recorded them, bullets
+    #: verbatim. See ``CandidateProfile.projects``.
+    projects: list[dict[str, Any]] = Field(default_factory=list)
     raw_text: str | None = None
     skills: list[SkillCreate] = Field(default_factory=list)
     #: Rows of their own, so a generated CV can refer to a job rather than

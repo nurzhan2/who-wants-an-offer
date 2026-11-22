@@ -52,6 +52,12 @@ nothing after it all mean the same thing: `end` is `null` and `is_current` is
   only the bullet glyph itself. One string per bullet. A plain duty list
   ("разработка API") counts too: record what is written. If the job has no
   bullets or description, use `[]`. Never move a bullet from one job to another.
+- `projects` — personal, open-source, hackathon, course or thesis projects the
+  resume lists **outside** its jobs: `name` as written, `link` (repository or
+  demo address) or `null`, `stack`, `year` when stated, and `achievements` —
+  the project's bullets or description sentences, **copied word for word**
+  like a job's. Work done inside a job belongs to that job's `achievements`,
+  never here. `[]` when the resume lists no projects.
 - `work_periods[].domains` — the industry, in lowercase English: `fintech`,
   `e-commerce`, `edtech`, `gamedev`, `healthcare`, `logistics`, `govtech`,
   `adtech`, `telecom`, `gambling`, `outsourcing`. Omit rather than force-fit.

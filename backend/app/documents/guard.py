@@ -60,11 +60,13 @@ from enum import StrEnum
 
 from app.documents.context import (
     MAX_BULLETS_PER_JOB,
+    MAX_BULLETS_PER_PROJECT,
+    MAX_PROJECTS_SHOWN,
     MAX_SUMMARY_CHARS,
     CVContext,
     SkillChoice,
 )
-from app.documents.render import JobChoice
+from app.documents.render import JobChoice, ProjectChoice
 from app.letters.context import fold, unsupported_numbers
 
 #: Below this a "CV" is a stub rather than a short CV, and the distinction is
@@ -128,6 +130,11 @@ class CVProblem(StrEnum):
     #: The summary is a list of technologies rather than sentences — the other
     #: half of what the owner called garbage. The skills section is the list.
     SUMMARY_IS_A_LIST = "summary_is_a_list"
+    #: A project ref that is not one of the profile's, a bullet index that
+    #: project does not have, the same one twice, or more than a CV can carry.
+    UNKNOWN_PROJECT = "unknown_project"
+    PROJECT_BULLETS_INVALID = "project_bullets_invalid"
+    TOO_MANY_PROJECTS = "too_many_projects"
 
 
 #: What each problem is called where a person reads it. Russian, because that is
@@ -152,6 +159,9 @@ RUSSIAN: dict[CVProblem, str] = {
     CVProblem.TOO_MANY_ACHIEVEMENTS: "у места работы слишком много пунктов",
     CVProblem.NO_ACHIEVEMENTS_SHOWN: "в резюме не показано ни одного достижения",
     CVProblem.SUMMARY_IS_A_LIST: "блок «о себе» — перечень технологий, а не текст",
+    CVProblem.UNKNOWN_PROJECT: "в резюме проект, которого нет в профиле",
+    CVProblem.PROJECT_BULLETS_INVALID: "у проекта выбраны несуществующие или повторные пункты",
+    CVProblem.TOO_MANY_PROJECTS: "проектов больше, чем помещается в резюме",
 }
 
 #: English, for the retry message the model is shown and for structured logs.
@@ -207,6 +217,14 @@ ENGLISH: dict[CVProblem, str] = {
         "it shows no achievements at all although the jobs have them; choose the "
         "most relevant 2 to 5 for each recent job"
     ),
+    CVProblem.UNKNOWN_PROJECT: (
+        "it refers to a project by a ref that was not in the list you were given"
+    ),
+    CVProblem.PROJECT_BULLETS_INVALID: (
+        f"a project's bullets must be indices listed under that project, each at "
+        f"most once and at most {MAX_BULLETS_PER_PROJECT}"
+    ),
+    CVProblem.TOO_MANY_PROJECTS: f"it shows more than {MAX_PROJECTS_SHOWN} projects",
     CVProblem.SUMMARY_IS_A_LIST: (
         "the summary is a list of technologies; write two or three sentences "
         "about what the candidate builds and one result from the achievements — "
@@ -365,6 +383,36 @@ def reads_as_a_list(text: str) -> bool:
         return False
     short = sum(1 for words in pieces if len(words) <= LIST_SHORT_PIECE_WORDS)
     return short / len(pieces) >= LIST_SHORT_SHARE
+
+
+def check_projects(shown: tuple[ProjectChoice, ...], context: CVContext) -> list[CVProblem]:
+    """Every project must be the profile's, showing only its own bullets.
+
+    The same membership rules as :func:`check_experience`, and the same
+    reasons: a project the resume does not list, or a sentence it never wrote
+    about one, is an invention in the section where a junior's claims are read
+    most closely.
+    """
+    problems: list[CVProblem] = []
+    by_ref = context.projects_by_ref
+    if any(choice.ref not in by_ref for choice in shown) or len(
+        {choice.ref for choice in shown}
+    ) != len(shown):
+        problems.append(CVProblem.UNKNOWN_PROJECT)
+    if len(shown) > MAX_PROJECTS_SHOWN:
+        problems.append(CVProblem.TOO_MANY_PROJECTS)
+    for choice in shown:
+        project = by_ref.get(choice.ref)
+        if project is None:
+            continue
+        if (
+            any(not 0 <= index < len(project.achievements) for index in choice.bullets)
+            or len(set(choice.bullets)) != len(choice.bullets)
+            or len(choice.bullets) > MAX_BULLETS_PER_PROJECT
+        ):
+            problems.append(CVProblem.PROJECT_BULLETS_INVALID)
+            break
+    return problems
 
 
 def check_summary(summary: str, context: CVContext) -> list[CVProblem]:

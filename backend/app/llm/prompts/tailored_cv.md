@@ -36,12 +36,18 @@ summary, and it must be in that language.
    index twice, is rejected in code. The CV must fit one page: if it would run
    longer, the last bullets of the oldest jobs are dropped in code, so put the
    ones that matter first.
-5. **Which of a job's technologies are shown.** Narrow each job's stack to what
+5. **Which projects appear, and which of their bullets.** Projects outside
+   employment carry weight when commercial experience is short. Choose up to
+   {{max_projects}} that answer this vacancy best, by `ref`, most relevant
+   first, each with up to {{max_project_bullets}} bullet indices; choose none
+   if none is relevant. The same rules as for jobs: indices only, printed as
+   written.
+6. **Which of a job's technologies are shown.** Narrow each job's stack to what
    matters for this vacancy. You may only remove entries, never add one: a
    technology attributed to an employer who never used it is the worst kind of
    error in this document, because it is checkable by asking them.
-6. **The headline**, chosen verbatim from the list of allowed headlines below.
-7. **A short summary**, at most {{max_summary_chars}} characters: two or three
+7. **The headline**, chosen verbatim from the list of allowed headlines below.
+8. **A short summary**, at most {{max_summary_chars}} characters: two or three
    sentences, in the CV's language. Say what the candidate builds (role and core
    stack that this vacancy asks for) and give one concrete result taken from
    the achievements. Write sentences, not a list of technologies. Or return an
@@ -97,6 +103,10 @@ in your text is a claim nothing supports. No clichés either: "passionate",
 
 {{experience_block}}
 
+## The candidate's projects — refer to these by `ref`
+
+{{projects_block}}
+
 ## Allowed headlines — choose one of these verbatim
 
 {{headlines_block}}
@@ -139,4 +149,7 @@ Return a JSON object with these fields and nothing else:
   object with `ref` (a number from the jobs list above), `stack` (a subset of
   that job's own technologies, in the order to print them) and `bullets` (the
   indices of that job's achievements to show, most relevant first).
+- `projects` — the projects to show, in order: objects with `ref` (from the
+  projects list above) and `bullets` (indices of that project's bullets).
+  `[]` when none fits or none is recorded.
 {{feedback}}

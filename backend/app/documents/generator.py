@@ -56,13 +56,21 @@ from app.documents import prompt as prompt_builder
 from app.documents.context import (
     MAX_BULLETS_OLDER_JOB,
     MAX_BULLETS_PER_JOB,
+    MAX_BULLETS_PER_PROJECT,
     MAX_EXPERIENCE_ENTRIES,
+    MAX_PROJECTS_SHOWN,
     RECENT_JOBS,
     CVContext,
     SkillChoice,
 )
 from app.documents.guard import CVProblem
-from app.documents.render import CVArrangement, JobChoice, fits_one_page, to_text
+from app.documents.render import (
+    CVArrangement,
+    JobChoice,
+    ProjectChoice,
+    fits_one_page,
+    to_text,
+)
 from app.letters.context import AchievementFact, LetterContext, fold, text_language
 from app.letters.context import build_context as letter_context
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN
@@ -144,6 +152,15 @@ class DraftSkill(BaseModel):
     shown_as: str = ""
 
 
+class DraftProject(BaseModel):
+    """One project in the model's answer: which project, which of its bullets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ref: int
+    bullets: list[int] = Field(default_factory=list)
+
+
 class DraftJob(BaseModel):
     """One job in the model's answer: which job, its technologies, its bullets.
 
@@ -176,6 +193,7 @@ class CVDraft(BaseModel):
     summary: str = ""
     skills: list[DraftSkill] = Field(default_factory=list)
     experience: list[DraftJob] = Field(default_factory=list)
+    projects: list[DraftProject] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +286,12 @@ def to_arrangement(draft: CVDraft, context: CVContext) -> CVArrangement:
         summary=draft.summary.strip(),
         skills=tuple(skills),
         experience=tuple(jobs[:MAX_EXPERIENCE_ENTRIES]),
+        # Passed through as given, repeats and all, for the guard to judge:
+        # a project named twice is a mistake the retry should hear about.
+        projects=tuple(
+            ProjectChoice(ref=project.ref, bullets=tuple(project.bullets))
+            for project in draft.projects
+        ),
     )
 
 
@@ -291,6 +315,7 @@ def inspect(arrangement: CVArrangement, context: CVContext) -> list[CVProblem]:
         problems.append(CVProblem.HEADLINE_NOT_SUPPORTED)
     problems.extend(guard.check_skills(arrangement.skills, context))
     problems.extend(guard.check_experience(arrangement.experience, context))
+    problems.extend(guard.check_projects(arrangement.projects, context))
     problems.extend(guard.check_summary(arrangement.summary, context))
 
     text = to_text(arrangement, context)
@@ -484,6 +509,12 @@ def review_context(context: CVContext) -> LetterContext:
         AchievementFact(company=entry.company, title=entry.title, text=text)
         for entry in context.experience
         for text in entry.achievements
+    ) + tuple(
+        # A project's bullets are labelled as a project's, so the reviewer can
+        # say "show the eval-harness project" without mistaking it for a job.
+        AchievementFact(company=f"project {project.name}", title="project", text=text)
+        for project in context.projects
+        for text in project.achievements
     )
     profile = context.profile.model_copy(update={"achievements": achievements})
     return letter_context(context.vacancy, profile, language=context.language)
@@ -609,6 +640,15 @@ def compose_fallback(context: CVContext) -> CVArrangement:
             )
             for position, entry in enumerate(context.experience)
         ),
+        # The resume's first projects, each with its first bullets: the owner's
+        # own order is the only judgement this branch makes about them.
+        projects=tuple(
+            ProjectChoice(
+                ref=project.ref,
+                bullets=tuple(range(min(len(project.achievements), MAX_BULLETS_PER_PROJECT))),
+            )
+            for project in context.projects[:MAX_PROJECTS_SHOWN]
+        ),
     )
     return fit_to_page(arrangement, context)
 
@@ -620,29 +660,46 @@ MIN_BULLETS_OLDER_JOB = 1
 
 
 def fit_to_page(arrangement: CVArrangement, context: CVContext) -> CVArrangement:
-    """The arrangement with bullets dropped, oldest job first, until it fits a page.
+    """The arrangement with lines dropped, least valuable first, until it fits a page.
 
-    A person fitting a CV to one page compresses the oldest role first and the
-    least relevant line of it first, and this does the same: it removes the last
-    bullet of the job furthest down the page, one at a time, re-measuring with
-    :func:`app.documents.render.estimated_lines` after each, and never takes a
-    recent job below :data:`MIN_BULLETS_RECENT_JOB` or an older one below
-    :data:`MIN_BULLETS_OLDER_JOB`. "Last" is the arrangement's own order: for a
-    model's answer that is its least relevant choice, for the rule-based one the
-    resume's last bullet.
+    A person fitting a CV to one page cuts in a predictable order, and this
+    follows it, re-measuring with :func:`app.documents.render.estimated_lines`
+    after every cut:
 
-    Only bullets are ever removed, so nothing can be added to a document by
+    1. projects' extra bullets, last project first, down to one each;
+    2. jobs' last bullets, oldest job first, never taking a recent job below
+       :data:`MIN_BULLETS_RECENT_JOB` or an older one below
+       :data:`MIN_BULLETS_OLDER_JOB`;
+    3. whole projects, last first.
+
+    "Last" is the arrangement's own order: for a model's answer that is its
+    least relevant choice, for the rule-based one the resume's last line.
+
+    Only lines are ever removed, so nothing can be added to a document by
     fitting it, and a profile too large to fit even at the floors is returned at
     the floors rather than refused — a CV that runs a few lines long is a
     formatting fault, not a reason to hand over nothing.
     """
-    jobs = list(arrangement.experience)
     current = arrangement
+
+    def fits() -> bool:
+        return fits_one_page(current, context)
+
+    projects = list(current.projects)
+    for index in range(len(projects) - 1, -1, -1):
+        while not fits() and len(projects[index].bullets) > 1:
+            projects[index] = projects[index].model_copy(
+                update={"bullets": projects[index].bullets[:-1]}
+            )
+            current = current.model_copy(update={"projects": tuple(projects)})
+
+    jobs = list(current.experience)
     for index in range(len(jobs) - 1, -1, -1):
         floor = MIN_BULLETS_RECENT_JOB if index < RECENT_JOBS else MIN_BULLETS_OLDER_JOB
-        while not fits_one_page(current, context) and len(jobs[index].bullets) > floor:
+        while not fits() and len(jobs[index].bullets) > floor:
             jobs[index] = jobs[index].model_copy(update={"bullets": jobs[index].bullets[:-1]})
-            current = arrangement.model_copy(update={"experience": tuple(jobs)})
-        if fits_one_page(current, context):
-            break
+            current = current.model_copy(update={"experience": tuple(jobs)})
+
+    while not fits() and current.projects:
+        current = current.model_copy(update={"projects": current.projects[:-1]})
     return current

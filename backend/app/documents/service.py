@@ -135,6 +135,7 @@ async def load_cv_context(
         ),
         experience=await document_store.load_experience(session, profile.profile_id),
         education=await document_store.load_education(session, profile.profile_id),
+        projects=await document_store.load_projects(session, profile.profile_id),
     )
 
 

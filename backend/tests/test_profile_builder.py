@@ -968,3 +968,54 @@ async def test_achievements_extracted_from_a_resume_are_stored_per_job(
         ["Shipped a billing API used by 3 teams.", "Wrote its runbook."],
         [],
     ]
+
+
+def test_projects_are_kept_with_verbatim_bullets_and_never_duplicate_a_job() -> None:
+    """A "project" named after an employer is that job's work: it stays there."""
+    from app.schemas.llm import ExtractedProject
+
+    extraction = make_extraction(
+        projects=[
+            ExtractedProject(
+                name="Eval  harness",
+                link=" github.com/example/eval ",
+                stack=["Python", " "],
+                year=2025,
+                achievements=["- Scores 3 prompt variants on 120 cases.", ""],
+            ),
+            ExtractedProject(name="Acme", achievements=["Work done at the job."]),
+            ExtractedProject(name="  "),
+        ]
+    )
+
+    assert profile_builder.to_projects(extraction) == [
+        {
+            "name": "Eval harness",
+            "link": "github.com/example/eval",
+            "stack": ["Python"],
+            "year": 2025,
+            "achievements": ["Scores 3 prompt variants on 120 cases."],
+        }
+    ]
+
+
+async def test_projects_extracted_from_a_resume_are_stored_on_the_profile(
+    db_session: AsyncSession, profiles: ProfileRepository, pending_id: UUID, fake_embeddings: None
+) -> None:
+    from app.schemas.llm import ExtractedProject
+
+    extraction = make_extraction(
+        projects=[ExtractedProject(name="Eval harness", achievements=["Runs in CI."])]
+    )
+    await build(db_session, pending_id, extraction)
+
+    profile = await stored(profiles, db_session, pending_id)
+    assert profile.projects == [
+        {
+            "name": "Eval harness",
+            "link": None,
+            "stack": [],
+            "year": None,
+            "achievements": ["Runs in CI."],
+        }
+    ]

@@ -42,8 +42,10 @@ from app.db.seed_rows import seed_only
 from app.documents.context import (
     EducationEntry,
     ExperienceEntry,
+    ProjectEntry,
     education_from_rows,
     experience_from_rows,
+    projects_from_rows,
 )
 from app.documents.employer import EmployerSignals, from_raw
 from app.letters import channel
@@ -133,6 +135,14 @@ async def load_education(session: AsyncSession, profile_id: UUID) -> tuple[Educa
         select(CandidateProfile.education).where(CandidateProfile.id == profile_id)
     )
     return education_from_rows(stored)
+
+
+async def load_projects(session: AsyncSession, profile_id: UUID) -> tuple[ProjectEntry, ...]:
+    """The profile's projects, from the JSONB column that holds them (0021)."""
+    stored = await session.scalar(
+        select(CandidateProfile.projects).where(CandidateProfile.id == profile_id)
+    )
+    return projects_from_rows(stored)
 
 
 async def load_resume_text(session: AsyncSession, profile_id: UUID) -> str | None:

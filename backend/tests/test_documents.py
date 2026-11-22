@@ -85,7 +85,7 @@ from app.documents.generator import (
 )
 from app.documents.guard import CVProblem
 from app.documents.prompt import variables
-from app.documents.render import CVArrangement, JobChoice
+from app.documents.render import CVArrangement, JobChoice, ProjectChoice
 from app.documents.service import write_cv
 from app.letters.context import ProfileFacts, SkillFact, VacancyFacts
 from app.llm import prompts
@@ -352,7 +352,7 @@ def test_the_model_is_given_no_field_for_a_company_a_title_or_a_date() -> None:
     per_job = set(DraftJob.model_fields)
     per_skill = set(DraftSkill.model_fields)
 
-    assert top_level == {"headline", "summary", "skills", "experience"}
+    assert top_level == {"headline", "summary", "skills", "experience", "projects"}
     # ``bullets`` is a list of integers: which stored bullets, never their text.
     assert per_job == {"ref", "stack", "bullets"}
     assert DraftJob.model_fields["bullets"].annotation == list[int]
@@ -2347,3 +2347,170 @@ def test_the_rule_based_cv_fits_a_page_even_for_a_long_career() -> None:
 
     assert render.fits_one_page(arrangement, context)
     assert all(len(job.bullets) >= 1 for job in arrangement.experience)
+
+
+# ── projects (migration 0021) ─────────────────────────────────────────
+
+
+def projects() -> tuple[Any, ...]:
+    """Two synthetic projects, the shape ``projects_from_rows`` produces."""
+    from app.documents.context import projects_from_rows
+
+    return projects_from_rows(
+        [
+            {
+                "name": "Eval harness",
+                "link": "github.com/example/eval-harness",
+                "stack": ["Python", "pytest"],
+                "year": 2025,
+                "achievements": [
+                    "CLI that scores 3 prompt variants against a YAML suite of 120 cases.",
+                    "Runs in CI and blocks merges that drop the pass rate.",
+                ],
+            },
+            {"name": ""},
+            {
+                "name": "Kafka playground",
+                "stack": ["Kafka"],
+                "achievements": ["Streamed 1 million synthetic events through Kafka."],
+            },
+        ]
+    )
+
+
+@pytest.mark.unit
+def test_a_project_keeps_its_place_in_the_stored_list_as_its_handle() -> None:
+    """A skipped blank entry must not renumber the projects after it."""
+    assert [project.ref for project in projects()] == [0, 2]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_projects_render_under_their_heading_with_verbatim_bullets(language: str) -> None:
+    context = (
+        english_context() if language == "en" else cv_context(experience=achieving_jobs())
+    ).model_copy(update={"projects": projects()})
+    arrangement = compose_fallback(context).model_copy(
+        update={"projects": (ProjectChoice(ref=0, bullets=(1, 0)),)}
+    )
+
+    text = render.to_text(arrangement, context)
+
+    heading = "PROJECTS" if language == "en" else "ПРОЕКТЫ"
+    assert f"\n{heading}\n" in text
+    assert "Eval harness — github.com/example/eval-harness\t2025" in text
+    first = "• Runs in CI and blocks merges that drop the pass rate."
+    assert text.index(first) < text.index("• CLI that scores 3 prompt variants")
+    assert "Kafka playground" not in text
+    assert inspect(arrangement, context) == []
+
+
+@pytest.mark.unit
+def test_a_project_the_profile_does_not_list_or_a_bullet_it_never_had_is_rejected() -> None:
+    context = cv_context(experience=achieving_jobs()).model_copy(update={"projects": projects()})
+
+    unknown = guard.check_projects((ProjectChoice(ref=1),), context)
+    bad_index = guard.check_projects((ProjectChoice(ref=0, bullets=(0, 5)),), context)
+    repeated = guard.check_projects((ProjectChoice(ref=0, bullets=(1, 1)),), context)
+    too_many = guard.check_projects(tuple(ProjectChoice(ref=ref) for ref in (0, 2)) * 2, context)
+
+    assert CVProblem.UNKNOWN_PROJECT in unknown
+    assert CVProblem.PROJECT_BULLETS_INVALID in bad_index
+    assert CVProblem.PROJECT_BULLETS_INVALID in repeated
+    assert CVProblem.TOO_MANY_PROJECTS in too_many
+
+
+@pytest.mark.unit
+def test_a_project_s_stack_is_traceable_and_its_bullets_are_evidence() -> None:
+    """Kafka named by a project is the resume's claim, not the CV's invention."""
+    context = cv_context(
+        vacancy=vacancy_facts(key_skills=("Python", "Kafka")),
+        experience=achieving_jobs(),
+    ).model_copy(update={"projects": projects()})
+
+    assert "kafka" in context.traceable
+    assert guard.unsupported_mentions("Python, Kafka", context) == ()
+    assert CVProblem.UNSUPPORTED_NUMBER not in guard.check_summary(
+        "Built an eval CLI over 120 cases.", context
+    )
+
+
+@pytest.mark.unit
+def test_the_fallback_shows_the_first_projects_with_their_first_bullets() -> None:
+    context = cv_context(experience=achieving_jobs()).model_copy(update={"projects": projects()})
+
+    arrangement = compose_fallback(context)
+
+    assert [(choice.ref, choice.bullets) for choice in arrangement.projects] == [
+        (0, (0, 1)),
+        (2, (0,)),
+    ]
+
+
+@pytest.mark.unit
+def test_fitting_a_page_cuts_project_bullets_before_job_bullets() -> None:
+    from app.documents.generator import fit_to_page
+
+    context = cv_context(experience=_long_jobs()[:2]).model_copy(update={"projects": projects()})
+    full = CVArrangement(
+        headline="Backend Developer",
+        skills=compose_fallback(context).skills,
+        experience=tuple(JobChoice(ref=index, bullets=(0, 1, 2, 3, 4)) for index in range(2)),
+        projects=(ProjectChoice(ref=0, bullets=(0, 1)), ProjectChoice(ref=2, bullets=(0,))),
+    )
+
+    fitted = fit_to_page(full, context)
+
+    assert render.fits_one_page(fitted, context)
+    if fitted.experience != full.experience:
+        assert all(len(choice.bullets) <= 1 for choice in fitted.projects)
+
+
+@pytest.mark.unit
+def test_the_cv_reviewer_sees_project_bullets_labelled_as_projects() -> None:
+    from app.documents.generator import review_context
+
+    context = cv_context(experience=achieving_jobs()).model_copy(update={"projects": projects()})
+
+    facts = review_context(context).profile.achievements
+
+    assert any(
+        item.company == "project Eval harness" and "120 cases" in item.text for item in facts
+    )
+    assert any(item.company == "Chocofamily" for item in facts)
+
+
+@pytest.mark.unit
+def test_the_prompt_lists_projects_with_numbered_bullets() -> None:
+    context = cv_context(experience=achieving_jobs()).model_copy(update={"projects": projects()})
+
+    rendered = prompts.render("tailored_cv", **variables(context))
+
+    assert "- ref 0: Eval harness (github.com/example/eval-harness, 2025)" in rendered
+    assert "[1] Runs in CI and blocks merges" in rendered
+
+
+async def test_projects_are_stored_and_read_back(
+    db_session: AsyncSession, profiles: ProfileRepository
+) -> None:
+    profile_id = await make_profile(profiles)
+    from app.db.models import CandidateProfile
+
+    row = await db_session.get(CandidateProfile, profile_id)
+    assert row is not None
+    row.projects = [
+        {
+            "name": "Eval harness",
+            "link": None,
+            "stack": ["Python"],
+            "year": None,
+            "achievements": ["Runs in CI."],
+        }
+    ]
+    await db_session.flush()
+
+    loaded = await document_store.load_projects(db_session, profile_id)
+
+    assert [(project.name, project.achievements) for project in loaded] == [
+        ("Eval harness", ("Runs in CI.",))
+    ]
