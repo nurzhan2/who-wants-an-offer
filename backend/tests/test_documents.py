@@ -2104,7 +2104,9 @@ def test_the_file_is_a4_with_real_bullets_and_says_what_the_text_says() -> None:
     assert round(section.page_width.cm, 1) == render.PAGE_WIDTH_CM
     assert round(section.left_margin.cm, 1) == render.MARGIN_SIDE_CM
     paragraphs = [paragraph for paragraph in document.paragraphs if paragraph.text]
-    assert [paragraph.text for paragraph in paragraphs] == [
+    # The same characters, but for the kind of space inside a figure: the file
+    # keeps "35 000" on one line with a no-break space (render.unbreakable).
+    assert [paragraph.text.replace(render.NO_BREAK_SPACE, " ") for paragraph in paragraphs] == [
         line for line in render.to_text(arrangement, context).splitlines() if line
     ]
     name = paragraphs[0]

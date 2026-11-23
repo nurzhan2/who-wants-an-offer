@@ -549,6 +549,30 @@ def labels_bullets(achievements: tuple[str, ...]) -> bool:
     return labelled >= max(MIN_LABELLED_BULLETS, -(-len(achievements) // 2))
 
 
+#: A space that must not become a line break: inside a number grouped the
+#: Russian way ("35 000"), and between a figure and its unit of time or scale.
+_UNBREAKABLE_SPACE = re.compile(
+    r"(?<=\d) (?=\d{3}(?!\d))"
+    r"|(?<=\d) (?=(?:\u0441|\u043c\u0441|\u043c\u0438\u043d|\u0447|\u0442\u044b\u0441"
+    r"|\u043c\u043b\u043d|\u043c\u043b\u0440\u0434|s|ms|min|h|K)(?!\w))"
+)
+
+#: What replaces it: the no-break space, which Word and the PDF both honour.
+NO_BREAK_SPACE = "\u00a0"
+
+
+def unbreakable(text: str) -> str:
+    """The text with a no-break space wherever a line break would split a figure.
+
+    Russian typesetting keeps "35 000" and "7,8 с" whole, and a CV that prints
+    "35" at the end of one line and "000 сообщений" at the start of the next
+    reads as two numbers. Applied by the two drawers only, never to the
+    layout: :func:`to_text` — what is stored and audited — keeps the resume's
+    own characters, and the files differ from it in the kind of space alone.
+    """
+    return _UNBREAKABLE_SPACE.sub(NO_BREAK_SPACE, text)
+
+
 def _bullet(text: str, *, labelled: bool) -> Line:
     """One bullet line, its lead-in label in bold when the list uses them."""
     label = lead_in(text) if labelled else ""
@@ -888,7 +912,7 @@ def _draw(document: Any, line: Line) -> None:
     if style.rule_below:
         _rule_under(paragraph)
     for span in line.runs:
-        _run(paragraph, span.text, style, bold=span.bold, italic=span.italic)
+        _run(paragraph, unbreakable(span.text), style, bold=span.bold, italic=span.italic)
     if line.aside:
         spacing.tab_stops.add_tab_stop(Cm(RIGHT_EDGE_CM), WD_TAB_ALIGNMENT.RIGHT)
         _run(paragraph, "\t", style)

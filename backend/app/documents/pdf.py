@@ -60,6 +60,7 @@ from app.documents.render import (
     LineStyle,
     layout,
     letter_paragraphs,
+    unbreakable,
 )
 
 #: What the file is, and the media type it is served under.
@@ -151,7 +152,7 @@ def _markup(line: Line) -> str:
     """The line's spans as reportlab paragraph markup, every character escaped."""
     parts: list[str] = []
     for span in line.runs:
-        text = escape(span.text)
+        text = escape(unbreakable(span.text))
         if span.italic:
             text = f"<i>{text}</i>"
         if span.bold:

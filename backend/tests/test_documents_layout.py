@@ -642,3 +642,19 @@ def test_a_link_too_long_for_its_line_still_renders() -> None:
     context = sample_context(projects=(project,))
 
     assert pdf.to_pdf(compose_fallback(context), context).startswith(b"%PDF-")
+
+
+def test_a_figure_is_never_split_across_two_lines_in_the_files() -> None:
+    """ "35" at a line's end and "000 сообщений" on the next read as two numbers."""
+    nbsp = render.NO_BREAK_SPACE
+
+    assert render.unbreakable("35 000 сообщений, 2,9 с и 120 ms в 3 языках") == (
+        f"35{nbsp}000 сообщений, 2,9{nbsp}с и 120{nbsp}ms в 3 языках"
+    )
+    context = sample_context(language="ru")
+    arrangement = compose_fallback(context)
+    assert nbsp not in render.to_text(arrangement, context), "the stored text keeps its spaces"
+    import docx
+
+    document = docx.Document(io.BytesIO(render.to_docx(arrangement, context)))
+    assert any(f"35{nbsp}000" in paragraph.text for paragraph in document.paragraphs)
