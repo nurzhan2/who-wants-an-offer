@@ -92,6 +92,9 @@ PAGE_RESERVE = 6.0
 #: Between a title and what sits at the right margin, at the least.
 ASIDE_GAP = 8.0
 
+#: The least share of the line a title keeps beside its right-margin text.
+MIN_TITLE_SHARE = 1 / 3
+
 #: The rule under a heading: how far below the text, and how thick.
 RULE_GAP = 1.5
 RULE_WIDTH = 0.5
@@ -192,6 +195,9 @@ class _LineFlowable(Flowable):  # type: ignore[misc]
     def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
         self._width = available_width
         room = available_width - (self._right_width + ASIDE_GAP if self._right else 0.0)
+        # A link long enough to leave the title no room still leaves it a
+        # third of the line: the two then overlap rather than the build fail.
+        room = max(room, available_width * MIN_TITLE_SHARE)
         _, self._left_height = self._left.wrap(room, available_height)
         height = self._left_height
         if self._right is not None:

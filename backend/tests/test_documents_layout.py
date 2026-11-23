@@ -615,3 +615,30 @@ def test_the_pdf_is_what_is_sent_once_its_own_audit_passes() -> None:
         b"PK",
     )
     assert "pdf" not in document.model_dump(), "never serialised into a response"
+
+
+def test_markup_characters_in_the_owner_s_text_are_printed_not_parsed() -> None:
+    """A bullet about "R&D" or "<200 ms" must not break the PDF or lose a character."""
+    bullet = "Search & ranking. Cut p95 to <200 ms for R&D teams with a <b>cache</b> layer."
+    job = sample_context().experience[0].model_copy(update={"achievements": (bullet, *BULLETS[1:])})
+    context = sample_context(experience=(job,))
+    arrangement = compose_fallback(context).model_copy(
+        update={"experience": (JobChoice(ref=0, bullets=(0, 1)),)}
+    )
+
+    with pdfplumber.open(io.BytesIO(pdf.to_pdf(arrangement, context))) as document:
+        extracted = document.pages[0].extract_text() or ""
+
+    assert " ".join(_words(bullet)) in " ".join(_words(extracted))
+
+
+def test_a_link_too_long_for_its_line_still_renders() -> None:
+    """The title keeps a third of the line; the build never fails over a long link."""
+    project = (
+        sample_context()
+        .projects[0]
+        .model_copy(update={"link": "github.com/" + "very-long-organisation-name/" * 4 + "evalkit"})
+    )
+    context = sample_context(projects=(project,))
+
+    assert pdf.to_pdf(compose_fallback(context), context).startswith(b"%PDF-")
