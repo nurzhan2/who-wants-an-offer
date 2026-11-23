@@ -347,7 +347,18 @@ def test_nothing_in_the_crawl_config_can_raise_the_pace() -> None:
     at two in the morning is another, and this asserts that key does not exist.
     """
     named = set(CrawlSettings.model_fields)
-    assert named == {"minutes", "pages", "pause_minutes", "cities"}
+    # The three added on 23 Nov 2026 decide WHAT is bought, never how fast:
+    # catalogue_only and max_age_days only remove pages from a run, and
+    # catalog_pages spends the same per-request pace on catalogue pages.
+    assert named == {
+        "minutes",
+        "pages",
+        "pause_minutes",
+        "cities",
+        "catalogue_only",
+        "catalog_pages",
+        "max_age_days",
+    }
     assert not any(
         word in field for field in named for word in ("rate", "rps", "second", "delay", "fast")
     )

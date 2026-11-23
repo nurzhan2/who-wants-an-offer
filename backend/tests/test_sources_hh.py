@@ -68,6 +68,7 @@ from app.sources.hh import (
     MAX_SPANS,
     POSITION_PREFIX,
     ROLES_URL,
+    CrawlSettings,
     FileCensus,
     FileWatermark,
     HHMarkupError,
@@ -368,6 +369,17 @@ def no_head_slice(monkeypatch: pytest.MonkeyPatch) -> None:
     nothing ever exercised as it ships. See
     ``test_the_shipped_head_slice_walks_a_small_file_once_and_records_it``.
     """
+
+
+@pytest.fixture(autouse=True)
+def the_walk_with_every_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read the ``crawl:`` block as if it were empty, whatever ``hh_sites.yaml`` ships.
+
+    The shipped block is the server's — catalogue only, nothing older than 21
+    days — and these tests pin the walk underneath those switches, on fixtures
+    dated in September. ``test_hh_lean.py`` owns the switches themselves.
+    """
+    monkeypatch.setattr("app.sources.hh.load_crawl", lambda *_, **__: CrawlSettings())
 
 
 @pytest.fixture

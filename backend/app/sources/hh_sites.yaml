@@ -107,6 +107,32 @@ crawl:
   #     - {host: karaganda.hh.kz, share: 1}
   cities: []
 
+  # Fetch ONLY the postings the profession catalogue named (/vacancies/{slug}
+  # pages ranked from the resume by hh_roles.py), and never "the rest of the
+  # corpus newest-first". Absent or false: the old walk, catalogue first and
+  # then everything else on the remaining budget — which is where the junk came
+  # from (a date-ordered walk of Almaty: 294 postings, none in development).
+  # On since 23 Nov 2026, the owner's call: "analysing thousands of junk
+  # vacancies is not the way". A posting in no profession page the profile
+  # selects is never bought; widen the profile (hh_roles.yaml) or catalog_pages
+  # to reach more, not this switch.
+  catalogue_only: true
+
+  # Catalogue pages one run opens per city. One request each, ~50 vacancy ids
+  # each (measured on /vacancies/programmist). Absent: 8, the number chosen when
+  # the catalogue only reordered the walk. Half of them are the head of the
+  # ranked list, re-read every run so a new posting shows within hours; the
+  # other half rotate through the tail across runs.
+  catalog_pages: 30
+
+  # Do not buy a page for a sitemap entry whose lastmod is older than this. hh
+  # moves lastmod on every edit and every auto-renewal (HH_AUTO_RENEWAL every
+  # 72 hours on the sampled posting), so an entry untouched for three weeks is
+  # a posting nobody is paying to keep in front of job seekers. Absent: no
+  # filter. Skipped entries are not recorded as fetched; they stay old, so they
+  # are simply never due again.
+  max_age_days: 21
+
 # The long run, for a machine left until morning. Read instead of `crawl:`
 # when HH_CRAWL_PROFILE=night, which is what `wwao crawl` is told to set at
 # night and what nothing else sets: the dashboard's buttons and the chain run
@@ -153,3 +179,11 @@ night:
     - {host: shymkent.hh.kz, weight: 1}
     - {host: karaganda.hh.kz, weight: 1}
     - {host: hh.ru, weight: 2}
+  # Catalogue only at night too, 23 Nov 2026. The night used to be the corpus
+  # walk — length was the lever for "tens of thousands" — and that is exactly
+  # the junk the owner asked to stop paying for. What the night buys instead is
+  # breadth of the catalogue: 150 pages per city, which sweeps a few hundred
+  # profession slugs per night and buys only the new ids on them.
+  catalogue_only: true
+  catalog_pages: 150
+  max_age_days: 21
