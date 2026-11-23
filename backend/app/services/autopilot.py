@@ -62,7 +62,12 @@ from app.letters import store as letters_store
 from app.letters.context import ProfileFacts
 from app.letters.examples import ExamplePool
 from app.matching import profile_vectors
-from app.matching.scorer import ProfileNotReadyError, profiles_line, score_corpus
+from app.matching.scorer import (
+    ProfileNotReadyError,
+    profiles_line,
+    score_corpus,
+    window_line,
+)
 from app.pipeline.embedding import EmbeddingOutcome, embed_pending, embed_pending_titles
 from app.schemas.autopilot import (
     BatchConfirmOutcome,
@@ -328,6 +333,8 @@ async def _step_match(step: ChainStep) -> list[str]:
     lines = [f"Рассмотрено вакансий: {outcome.considered}, записано оценок: {outcome.written}."]
     if (profiles := profiles_line(outcome.profiles)) is not None:
         lines.append(profiles)
+    if (window := window_line(outcome)) is not None:
+        lines.append(window)
     if outcome.without_embedding:
         lines.append(f"Без вектора описания осталось: {outcome.without_embedding}.")
     if note:

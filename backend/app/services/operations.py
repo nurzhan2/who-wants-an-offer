@@ -51,7 +51,12 @@ from app.db.session import session_factory
 from app.letters import store
 from app.letters.service import write_batch
 from app.matching import profile_vectors
-from app.matching.scorer import ProfileNotReadyError, profiles_line, score_corpus
+from app.matching.scorer import (
+    ProfileNotReadyError,
+    profiles_line,
+    score_corpus,
+    window_line,
+)
 from app.pipeline.embedding import EmbeddingOutcome, embed_pending, embed_pending_titles
 from app.schemas.operations import (
     AgentProgress,
@@ -403,6 +408,8 @@ async def _match(progress: Progress) -> list[str]:
     ]
     if (profiles := profiles_line(outcome.profiles)) is not None:
         lines.append(profiles)
+    if (window := window_line(outcome)) is not None:
+        lines.append(window)
     if outcome.without_embedding:
         lines.append(
             f"Без вектора описания: {outcome.without_embedding} — посчитайте эмбеддинги и "

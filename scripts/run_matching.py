@@ -30,7 +30,7 @@ from app.core.logging import configure_logging
 from app.db.session import session_factory
 from app.matching import profile_vectors
 from app.matching.rules import DEFAULT_FORMULA, DEFAULT_UNSTATED, Formula, UnstatedRequirement
-from app.matching.scorer import ProfileNotReadyError, ScoringOutcome, score_corpus
+from app.matching.scorer import ProfileNotReadyError, ScoringOutcome, score_corpus, window_line
 
 RULE = "-" * 78  # ASCII: this report is printed to a cp1251 console
 
@@ -49,6 +49,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Score the corpus against the active profile.")
     parser.add_argument("--dry-run", action="store_true", help="score everything, write nothing")
     parser.add_argument("--limit", type=int, default=None, help="score only the newest N vacancies")
+    parser.add_argument(
+        "--window-days",
+        type=int,
+        default=None,
+        help=(
+            "score vacancies published (or first seen) within N days; "
+            "default SCORING_WINDOW_DAYS (30), 0 scores every active vacancy"
+        ),
+    )
     parser.add_argument(
         "--no-embed-profile",
         action="store_true",
@@ -91,10 +100,13 @@ async def run(
     limit: int | None,
     unstated: UnstatedRequirement = DEFAULT_UNSTATED,
     formula: Formula = DEFAULT_FORMULA,
+    window_days: int | None = None,
 ) -> ScoringOutcome:
     """Score, and keep it only if this is not a rehearsal."""
     async with session_factory() as session:
-        outcome = await score_corpus(session, limit=limit, unstated=unstated, formula=formula)
+        outcome = await score_corpus(
+            session, limit=limit, unstated=unstated, formula=formula, window_days=window_days
+        )
         if dry_run:
             await session.rollback()
         else:
@@ -118,6 +130,8 @@ def show(outcome: ScoringOutcome, note: str | None, *, dry_run: bool) -> None:
     print(f"  вакансий рассмотрено   {outcome.considered}")
     print(f"  записано match-строк   {outcome.written}")
     print(f"  сидовых пропущено      {outcome.skipped_seeds}")
+    if (window := window_line(outcome)) is not None:
+        print(f"  {window}")
     print()
     print("  БАКЕТЫ")
     for key, label in BUCKET_ORDER:
@@ -144,6 +158,7 @@ async def main() -> int:
             limit=args.limit,
             unstated=UnstatedRequirement(args.unstated),
             formula=Formula(args.formula),
+            window_days=args.window_days,
         )
     except ProfileNotReadyError as error:
         # The CLI already sets this example: when a link is missing, say which
