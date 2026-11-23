@@ -19,14 +19,16 @@ into data that looks measured. They are skipped, and the report says how many.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import Select, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.enums import MatchBucket, RemoteType, RequirementSource, Seniority
 from app.db.models import CandidateProfile, ProfileSkill, Vacancy, VacancySkill, VacancySource
 from app.db.profile_order import DEFAULT_ORDER
@@ -86,10 +88,18 @@ class ScoringOutcome:
     #: 0018 a pass scores every active profile, so ``written`` and ``buckets``
     #: count (vacancy, profile) pairs while ``considered`` counts vacancies.
     profiles: list[str] = field(default_factory=list)
+    #: The scoring window this pass used, in days, or ``None`` for none — the
+    #: case for explicit ``vacancy_ids`` and for ``scoring_window_days = 0``.
+    window_days: int | None = None
+    #: Active vacancies left out for being older than the window: not rescored,
+    #: their stored matches untouched. What a CV change did NOT have to pay for.
+    outside_window: int = 0
 
     def merge(self, other: "ScoringOutcome") -> None:
         """Fold another profile's pass into this one."""
         self.considered = max(self.considered, other.considered)
+        self.window_days = other.window_days
+        self.outside_window = max(self.outside_window, other.outside_window)
         self.written += other.written
         self.skipped_seeds = max(self.skipped_seeds, other.skipped_seeds)
         self.filtered += other.filtered
@@ -115,6 +125,8 @@ class ScoringOutcome:
             "without_embedding": self.without_embedding,
             "without_title_embedding": self.without_title_embedding,
             "without_skills": self.without_skills,
+            "window_days": self.window_days,
+            "outside_window": self.outside_window,
         }
 
 
@@ -136,11 +148,23 @@ async def score_corpus(
     unstated: UnstatedRequirement = DEFAULT_UNSTATED,
     formula: Formula = DEFAULT_FORMULA,
     vacancy_ids: Sequence[UUID] | None = None,
+    window_days: int | None = None,
 ) -> ScoringOutcome:
-    """Score every vacancy against every active profile, or the named one.
+    """Score every recent vacancy against every active profile, or the named one.
 
     ``vacancy_ids`` narrows the pass to those vacancies — the worker's case,
     which scores what a tick has just brought in rather than the whole corpus.
+    Those are scored whatever their age: whoever names a vacancy has decided.
+
+    Without ``vacancy_ids``, "the corpus" is the active vacancies whose
+    ``coalesce(published_at, first_seen_at)`` falls inside the scoring window —
+    ``window_days``, defaulting to ``settings.scoring_window_days`` (30); ``0``
+    is no window. This is what a new CV costs, and the point of bounding it:
+    the vacancy vectors do not depend on the CV and are reused as they are, so
+    a CV change is the profile's own two vectors
+    (``profile_vectors.ensure_profile_embedding``, two model calls) plus one
+    scoring pass over this window, in SQL. Older rows keep the matches they
+    had; ``outside_window`` counts them.
 
     One row per (vacancy, profile) pair, which ``match``'s unique key has always
     allowed. Which profile a vacancy is then worked from is decided by reading
@@ -153,6 +177,8 @@ async def score_corpus(
     two vectors (``profile_vectors.ensure_profile_embedding``) and one more
     pass over the corpus.
     """
+    days = settings.scoring_window_days if window_days is None else window_days
+    since = datetime.now(UTC) - timedelta(days=days) if days and vacancy_ids is None else None
     if profile_id is not None:
         return await _score_one(
             session,
@@ -161,6 +187,7 @@ async def score_corpus(
             unstated=unstated,
             formula=formula,
             vacancy_ids=vacancy_ids,
+            since=since,
         )
     profiles = list(
         (
@@ -185,6 +212,7 @@ async def score_corpus(
                 unstated=unstated,
                 formula=formula,
                 vacancy_ids=vacancy_ids,
+                since=since,
             )
         )
     return total
@@ -198,12 +226,16 @@ async def _score_one(
     unstated: UnstatedRequirement,
     formula: Formula,
     vacancy_ids: Sequence[UUID] | None = None,
+    since: datetime | None = None,
 ) -> ScoringOutcome:
     """Score every vacancy against one profile and store the reasons."""
     facts = await _profile_facts(session, profile)
     outcome = ScoringOutcome(unstated=unstated, formula=formula, profiles=[profile.slug])
+    if since is not None:
+        outcome.window_days = (datetime.now(UTC) - since).days
+        outcome.outside_window = await _outside_window(session, since)
 
-    ids = await _vacancy_ids(session, limit=limit, only=vacancy_ids)
+    ids = await _vacancy_ids(session, limit=limit, only=vacancy_ids, since=since)
     canonicalizer = default_canonicalizer()
     pending: list[MatchCreate] = []
     for start in range(0, len(ids), CHUNK):
@@ -246,6 +278,20 @@ def profiles_line(slugs: Sequence[str]) -> str | None:
     return (
         f"Профилей: {len(slugs)} ({', '.join(slugs)}); оценка — на каждую пару "
         "«вакансия × профиль», вакансия идёт от того профиля, с которым совпала лучше."
+    )
+
+
+def window_line(outcome: ScoringOutcome) -> str | None:
+    """One Russian line saying which vacancies a pass left out for age, or None.
+
+    None when there was no window, so a pass over named ids or with the window
+    off reads as it always did.
+    """
+    if outcome.window_days is None:
+        return None
+    return (
+        f"Окно оценки: вакансии за последние {outcome.window_days} дн.; "
+        f"старше — {outcome.outside_window}, их оценки не пересчитывались."
     )
 
 
@@ -301,15 +347,40 @@ def _languages(stored: Any) -> dict[str, str]:
     return spoken
 
 
+def posted_at() -> ColumnElement[datetime]:
+    """When a posting appeared: the employer's date, or ours when it has none."""
+    return func.coalesce(Vacancy.published_at, Vacancy.first_seen_at)
+
+
+async def _outside_window(session: AsyncSession, since: datetime) -> int:
+    """Active vacancies the window leaves out, for the report."""
+    stmt = (
+        select(func.count())
+        .select_from(Vacancy)
+        .where(Vacancy.is_active.is_(True), Vacancy.is_spam.is_(False), posted_at() < since)
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
 async def _vacancy_ids(
-    session: AsyncSession, *, limit: int | None, only: Sequence[UUID] | None = None
+    session: AsyncSession,
+    *,
+    limit: int | None,
+    only: Sequence[UUID] | None = None,
+    since: datetime | None = None,
 ) -> list[UUID]:
-    """Every active vacancy, newest first so a truncated run scores the freshest."""
+    """Every active vacancy, newest first so a truncated run scores the freshest.
+
+    ``since`` is the scoring window's start; ``score_corpus`` passes ``None``
+    whenever ids were named, so a named vacancy is scored whatever its age.
+    """
     stmt: Select[Any] = (
         select(Vacancy.id)
         .where(Vacancy.is_active.is_(True), Vacancy.is_spam.is_(False))
         .order_by(Vacancy.first_seen_at.desc(), Vacancy.id)
     )
+    if since is not None:
+        stmt = stmt.where(posted_at() >= since)
     if only is not None:
         stmt = stmt.where(Vacancy.id.in_(list(only)))
     if limit is not None:

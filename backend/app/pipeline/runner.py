@@ -37,12 +37,13 @@ import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.db.enums import PipelineRunStatus, VacancyCompleteness
@@ -154,6 +155,8 @@ class RunReport:
     embedding: EmbeddingOutcome | None = None
     #: Title vectors, matching's main signal since ``0015_title_embedding``.
     title_embedding: EmbeddingOutcome | None = None
+    #: Vacancies this run made inactive for being stale (:func:`archive_stale`).
+    archived: int = 0
     dry_run: bool = False
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     duration_seconds: float = 0.0
@@ -329,6 +332,10 @@ async def run_pipeline(
     report.sources.extend(outcomes)
 
     async with sessions() as session:
+        # Before any vector is computed, so nothing is embedded for a posting
+        # this run is about to retire.
+        report.archived = await archive_stale(session)
+        await session.commit()
         # Titles first, and the order is load-bearing rather than tidy: the
         # description pass ranks rows by title distance to the profile's headline
         # and stops when nothing left could enter the top, so with no title
@@ -349,6 +356,31 @@ async def run_pipeline(
         seconds=round(report.duration_seconds, 1),
     )
     return report
+
+
+async def archive_stale(session: AsyncSession, *, now: datetime | None = None) -> int:
+    """Retire what nothing vouches for any more, by the configured rules.
+
+    ``vacancy_unseen_days`` (not seen by a crawl and not republished) and
+    ``max_vacancy_age_days`` (published too long ago); see
+    :meth:`VacancyRepository.archive_stale` for why the first is a pair of
+    dates. An inactive vacancy drops out of the lists, the scoring and the
+    embedding step together, because each of them already reads ``is_active``.
+    """
+    moment = now or datetime.now(UTC)
+    unseen = settings.vacancy_unseen_days
+    retired = await VacancyRepository(session).archive_stale(
+        unseen_before=moment - timedelta(days=unseen) if unseen else None,
+        published_before=moment - timedelta(days=settings.max_vacancy_age_days),
+    )
+    if retired:
+        logger.info(
+            "pipeline.archived",
+            vacancies=retired,
+            unseen_days=unseen,
+            max_age_days=settings.max_vacancy_age_days,
+        )
+    return retired
 
 
 async def _eligible(

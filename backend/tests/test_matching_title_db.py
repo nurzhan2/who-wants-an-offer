@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.enums import MatchBucket
 from app.db.models import Match, Vacancy
 from app.db.repositories.profile import ProfileRepository
@@ -33,6 +34,17 @@ pytestmark = pytest.mark.db
 
 SAME = FakeEmbeddingProvider.vector_for("the same text")
 OTHER = FakeEmbeddingProvider.vector_for("a different text")
+
+
+@pytest.fixture(autouse=True)
+def no_scoring_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Score every active vacancy, as the scorer did before the window existed.
+
+    The factory dates every posting 2026-01-01, which a 30-day window measured
+    from the real clock leaves out. These tests are about what one pass reads
+    and writes; ``test_scoring_window.py`` owns the window.
+    """
+    monkeypatch.setattr(settings, "scoring_window_days", 0)
 
 
 async def a_profile(db_session: AsyncSession, *, headline_vector: list[float] | None) -> Any:

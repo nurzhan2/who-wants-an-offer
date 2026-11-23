@@ -46,6 +46,7 @@ from app.sources.hh import (
     CATALOG_PAGES_PER_RUN,
     ROLES_URL,
     CatalogPlan,
+    CrawlSettings,
     HHSource,
     pages_this_run,
 )
@@ -165,6 +166,17 @@ def http() -> Iterator[respx.MockRouter]:
         )
         router.get(ROLES_URL).mock(return_value=httpx.Response(200, json=DIRECTORY))
         yield router
+
+
+@pytest.fixture(autouse=True)
+def the_walk_with_every_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read the ``crawl:`` block as if it were empty, whatever ``hh_sites.yaml`` ships.
+
+    The shipped block is the server's — catalogue only, nothing older than 21
+    days — and these tests pin the walk underneath those switches, on fixtures
+    dated in September. ``test_hh_lean.py`` owns the switches themselves.
+    """
+    monkeypatch.setattr("app.sources.hh.load_crawl", lambda *_, **__: CrawlSettings())
 
 
 @pytest.fixture

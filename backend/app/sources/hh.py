@@ -68,6 +68,34 @@ order it always had. See ``_crawl_site`` for why the ids are intersected with th
 sitemap rather than fetched directly, and ``hh_roles.py`` for how a resume
 becomes a list of professions without this repository holding a list of them.
 
+**And since 2026-11-23, on the server, only the professions.** The owner's
+complaint was exact: analysing thousands of junk vacancies is not the way,
+especially since a new CV means recomputing everything. The junk had one
+address, the second half of the walk, so ``crawl.catalogue_only`` in
+``hh_sites.yaml`` removes it: a run buys only the ids its catalogue pages named.
+The catalogue is then the whole input, so a run opens more of it —
+``crawl.catalog_pages``, 30 per city instead of 8, one request each — and
+``crawl.max_age_days`` (21) drops every sitemap entry hh has not touched in
+three weeks before a page is bought for it. An id already covered at the same
+``lastmod`` is not bought again, as before; the head pages are re-read every
+run and only their new postings cost anything. What the walk skips is NOT
+recorded as covered, so a different profile, or the switch turned off, still
+reaches it. ``sources.hh.role_pass_planned`` logs where every catalogue id went
+(``known_skipped``, ``stale_skipped``, ``not_in_sitemap``, ``due_now``) and how
+many corpus pages the run did not buy (``junk_avoided``).
+
+The arithmetic for one city, from the measurements above: the old run was 1 +
+~10 sitemap files + 8 catalogue pages + up to ~1180 vacancy pages, of which the
+catalogue's ids were a few hundred at most and the rest a date-ordered corpus
+in which no development posting turned up in 294. Catalogue-only is the same
+~11 requests for the index and the sitemaps, 30 catalogue pages naming up to
+~1500 ids (fewer after overlap), and a vacancy page only for the ones that are
+new, changed and fresh — a few hundred on a first run, tens on the runs after
+it. Every page bought is one hh filed under a profession the profile selected;
+how many of those are truly development roles is ``role_hits`` / ``fetched`` in
+the same log line, and the ranked tail of the slug list (1C, ABAP pages that
+match role 96) is what keeps it under 100%.
+
 Only that redirect is recognised, and the gap is written down rather than
 papered over: a challenge delivered as a status code — a 403 whose body holds
 the captcha — has never been served to this repository, and a marker guessed
@@ -367,6 +395,12 @@ RUN_KEY = "run:last"
 #: three-hour cadence — and every run names postings the last one did not. A
 #: catalogue page is heavy, 1.49 MB measured, and only the ids are read out of
 #: it; that is bandwidth rather than requests, and requests are what hh counts.
+#:
+#: The default only. Everything above argues for eight when the catalogue
+#: REORDERS a walk whose vacancy budget is the binding limit. With
+#: ``crawl.catalogue_only`` the catalogue is the whole input and the binding
+#: limit is the supply of ids, so the shipped ``crawl:`` block sets
+#: ``catalog_pages: 30`` — see :class:`CrawlSettings`.
 CATALOG_PAGES_PER_RUN = 8
 
 #: How many of a run's catalogue pages come from the top of the ranked list
@@ -1040,7 +1074,7 @@ def catalog_entries(body: str, host: str) -> tuple[tuple[str, ...], int, int]:
     return tuple(dict.fromkeys(slugs)), len(locs), body.count("<lastmod>")
 
 
-def pages_this_run(plan: "CatalogPlan") -> tuple[tuple[str, ...], int]:
+def pages_this_run(plan: "CatalogPlan", pages: int | None = None) -> tuple[tuple[str, ...], int]:
     """Which catalogue pages to open now, and where the rotation continues.
 
     Half from the head of the ranked list and half from a window that moves
@@ -1048,17 +1082,24 @@ def pages_this_run(plan: "CatalogPlan") -> tuple[tuple[str, ...], int]:
     rotation over the whole list. A plan short enough to read in one run is read
     in one run, and the cursor stays where it is.
 
+    ``pages`` is the run's breadth (``crawl.catalog_pages``), defaulting to
+    :data:`CATALOG_PAGES_PER_RUN`. The head grows with it — half the pages, and
+    never fewer than :data:`CATALOG_HEAD_PAGES` — so a wider run re-reads more
+    of the professions nearest the profile every time, which is where a new
+    posting worth applying to appears first.
+
     Pure and separate from the fetching because it is the decision worth
     testing: everything else in the pass is a request and a regex.
     """
+    per_run = CATALOG_PAGES_PER_RUN if pages is None else pages
     slugs = plan.slugs
     if not slugs:
         return (), 0
-    if len(slugs) <= CATALOG_PAGES_PER_RUN:
+    if len(slugs) <= per_run:
         return slugs, plan.offset
-    head = slugs[:CATALOG_HEAD_PAGES]
+    head = slugs[: min(per_run, max(CATALOG_HEAD_PAGES, per_run // 2))]
     tail = slugs[len(head) :]
-    take = CATALOG_PAGES_PER_RUN - len(head)
+    take = per_run - len(head)
     start = plan.offset % len(tail)
     rotating = [tail[(start + step) % len(tail)] for step in range(min(take, len(tail)))]
     return (*head, *rotating), (start + len(rotating)) % len(tail)
@@ -1157,7 +1198,10 @@ class CrawlCity(BaseModel):
     when the owner asked for four.
     """
 
-    model_config = ConfigDict(frozen=True)
+    #: ``extra="forbid"`` since 23 Nov 2026: the night block said ``weight:``
+    #: and the field was ``share``, so every weight was silently ignored and
+    #: each city got an equal slice. A key nobody reads is now an error.
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str = Field(min_length=1, max_length=100)
     share: float = Field(default=1.0, gt=0)
@@ -1200,6 +1244,28 @@ class CrawlSettings(BaseModel):
     #: cities the plan's area names, or the ``default: true`` ones, at an equal
     #: share each — which is what ``sites_for`` did before this field existed.
     cities: tuple[CrawlCity, ...] = ()
+
+    #: Fetch only what the profession catalogue named, and nothing else.
+    #: ``False`` keeps the walk as it was: the catalogue's ids first, then the
+    #: rest of the corpus newest-first on whatever budget is left. That second
+    #: half is where the junk came from — a date-ordered walk of Almaty returned
+    #: 294 postings and none of them in development — so the shipped ``crawl:``
+    #: block turns it off. See :meth:`HHSource._crawl_site`.
+    catalogue_only: bool = False
+
+    #: Catalogue pages one run opens per host. ``None`` means
+    #: :data:`CATALOG_PAGES_PER_RUN`, the number chosen when the catalogue only
+    #: reordered the walk. With ``catalogue_only`` the catalogue is the whole of
+    #: the input, so it is worth more pages: each costs one request and names up
+    #: to 50 ids, of which only the new ones are bought.
+    catalog_pages: int | None = Field(default=None, gt=0, le=MAX_CATALOG_SLUGS)
+
+    #: Sitemap entries whose ``lastmod`` is older than this many days are not
+    #: fetched at all. ``None`` is no filter, which is what every run did before
+    #: this existed. The sitemap date is the only freshness signal available
+    #: BEFORE a page is bought, and an entry hh has not touched for three weeks
+    #: is a posting that was neither edited nor auto-renewed in that time.
+    max_age_days: float | None = Field(default=None, gt=0)
 
 
 def load_crawl(
@@ -1350,6 +1416,15 @@ class _SiteRun:
     #: profile asked for. Together with ``fetched`` this is the number the whole
     #: catalogue path exists to move: relevant postings per request spent.
     role_hits: int = 0
+    #: Outstanding entries not bought because their ``lastmod`` is older than
+    #: ``crawl.max_age_days``. A request each that the old walk would have spent.
+    stale_skipped: int = 0
+    #: Catalogue ids the sitemap lists and an earlier run already covered at
+    #: the same ``lastmod``: stored and unchanged, so not bought again.
+    known_skipped: int = 0
+    #: Corpus entries — named by no catalogue page — that ``catalogue_only``
+    #: kept this run from buying, capped at what its budget could have bought.
+    junk_avoided: int = 0
 
 
 @dataclass(slots=True)
@@ -1471,6 +1546,33 @@ class _CatalogPass:
     #: to show: which eight of a hundred pages were bought.
     opened: tuple[str, ...] = ()
     slugs: int = 0
+
+
+@dataclass(slots=True)
+class _WalkPlan:
+    """Which outstanding entries one host's walk buys, and why the rest are not.
+
+    Counts are of ids for the catalogue side — they answer "what happened to
+    the ids the catalogue named", and add up to ``len(catalog.ids)`` — and of
+    entries for the corpus side, which is what a page budget is spent on.
+    """
+
+    walk: list[tuple[str, SitemapEntry]]
+    #: Outstanding entries dropped for age, catalogue-named or not.
+    stale: int = 0
+    #: Catalogue ids listed in the sitemap and already covered (unchanged).
+    known: int = 0
+    #: Catalogue ids outstanding but older than ``max_age_days``.
+    stale_named: int = 0
+    #: Catalogue ids no sitemap file of this host lists.
+    not_listed: int = 0
+    #: Catalogue ids due now: fresh, outstanding, listed.
+    named_due: int = 0
+    #: Fresh outstanding entries no catalogue page named.
+    corpus_due: int = 0
+    #: Of those, how many this run's budget would have bought without
+    #: ``catalogue_only``. Zero when the option is off — nothing was avoided.
+    junk_avoided: int = 0
 
 
 @dataclass(slots=True)
@@ -2066,12 +2168,16 @@ class HHSource(BaseSource):
 
         due: dict[str, list[SitemapEntry]] = {}
         marks: dict[str, FileWatermark] = {}
+        #: Every id this host's sitemaps list, due or not. What tells a catalogue
+        #: id that is already stored and unchanged from one hh does not list.
+        listed: set[str] = set()
         for name, url in files:
             if stop():
                 logger.info("sources.hh.file_not_read", host=site.host, file=name)
                 continue
             entries = await self._sitemap_entries(site, url)
             spend()
+            listed.update(entry.external_id for entry in entries)
             # Read once and kept: the same mark decides what is due and then
             # advances over it, and nothing writes in between. Reading it twice
             # would be two sources of truth for one number.
@@ -2114,22 +2220,33 @@ class HHSource(BaseSource):
             key=lambda pair: _key(pair[1]),
             reverse=True,
         )
-        # The professions first, and only that. A stable sort on one boolean
-        # keeps the newest-first order inside both halves, so this adds an
-        # ordering and takes nothing away: every entry that was due before is
-        # still due, in the same relative place among its own kind.
-        walk.sort(key=lambda pair: pair[1].external_id not in catalog.ids)
-        reachable = sum(1 for _, entry in walk if entry.external_id in catalog.ids)
-        if catalog.ids:
+        plan = self._plan_walk(site, walk, catalog, listed, remaining=site_budget.remaining)
+        walk = plan.walk
+        state.stale_skipped = plan.stale
+        state.known_skipped = plan.known
+        state.junk_avoided = plan.junk_avoided
+        if catalog.ids or self.crawl.catalogue_only:
             logger.info(
                 "sources.hh.role_pass_planned",
                 host=site.host,
                 opened=list(catalog.opened),
+                catalogue_only=self.crawl.catalogue_only,
+                # What the catalogue named, and where each of those ids went:
+                # already stored and unchanged, too old to buy, not in any
+                # sitemap file of this host, or due now. The four add up to
+                # ``catalog_ids``.
                 catalog_ids=len(catalog.ids),
-                # The gap between these two is the cost named in the docstring:
-                # ids the catalogue offered that no sitemap file of this host
-                # accounts for, plus ids earlier runs already covered.
-                due_now=reachable,
+                known_skipped=plan.known,
+                stale_skipped=plan.stale_named,
+                not_in_sitemap=plan.not_listed,
+                due_now=plan.named_due,
+                # The corpus half: entries no catalogue page named. Walked
+                # behind the catalogue's when ``catalogue_only`` is off, and
+                # never bought when it is on — ``junk_avoided`` is how many of
+                # them this run's budget would otherwise have paid for.
+                corpus_due=plan.corpus_due,
+                junk_avoided=plan.junk_avoided,
+                stale_entries=plan.stale,
                 outstanding=outstanding,
             )
         try:
@@ -2196,6 +2313,78 @@ class HHSource(BaseSource):
 
         self._log_site(site, state, budget, outstanding, catalog)
 
+    def _plan_walk(
+        self,
+        site: HHSite,
+        walk: Sequence[tuple[str, SitemapEntry]],
+        catalog: "_CatalogPass",
+        listed: set[str],
+        *,
+        remaining: int,
+        now: datetime | None = None,
+    ) -> _WalkPlan:
+        """Filter and order one host's outstanding entries before a page is bought.
+
+        Three decisions, all made on what the sitemap and the catalogue say, so
+        none of them costs a request:
+
+        * **Already stored and unchanged** is the position's job and was before
+          this: an entry is outstanding only when no earlier run covered its
+          ``(lastmod, id)``. A posting hh edits or auto-renews gets a new
+          ``lastmod`` and is due again; one it leaves alone is not bought twice.
+          Counted here for the catalogue ids, which is where it matters now.
+        * **Too old to buy** — ``crawl.max_age_days``. Dropped from this run's
+          walk and NOT recorded as covered: an entry whose date is old stays old,
+          so it is never due again under the filter, and turning the filter off
+          gets it back rather than having claimed it was fetched.
+        * **Named by the catalogue or not.** With ``crawl.catalogue_only`` the
+          entries no profession page named are not walked at all. Without it
+          they follow the catalogue's, newest first, as they always did — a
+          stable sort on one boolean, so both halves keep their order.
+
+        ``walk`` arrives newest first and leaves in the order it will be bought.
+        """
+        config = self.crawl
+        named = catalog.ids
+        moment = now or datetime.now(UTC)
+        cutoff = (
+            None if config.max_age_days is None else moment - timedelta(days=config.max_age_days)
+        )
+        outstanding_ids = {entry.external_id for _, entry in walk}
+        fresh = [pair for pair in walk if cutoff is None or pair[1].lastmod >= cutoff]
+        fresh_ids = {entry.external_id for _, entry in fresh}
+        in_sitemap = named & listed
+        plan = _WalkPlan(
+            walk=[],
+            stale=len(walk) - len(fresh),
+            known=len(in_sitemap - outstanding_ids),
+            stale_named=len((in_sitemap & outstanding_ids) - fresh_ids),
+            not_listed=len(named - listed),
+            named_due=len(in_sitemap & fresh_ids),
+        )
+        corpus = [pair for pair in fresh if pair[1].external_id not in named]
+        plan.corpus_due = len(corpus)
+        catalogue_first = [pair for pair in fresh if pair[1].external_id in named]
+        if config.catalogue_only:
+            plan.walk = catalogue_first
+            # What the old walk would have spent on the corpus half: whatever
+            # the city's allowance had left after the catalogue's own entries.
+            plan.junk_avoided = min(len(corpus), max(0, remaining - len(catalogue_first)))
+            if not named:
+                # Not an error, and not silent. No catalogue ids means a profile
+                # with no keywords, a plan hh's directory could not resolve, or
+                # a catalogue that named nothing; in every case this mode has
+                # nothing it is allowed to buy, and the run says so.
+                logger.warning(
+                    "sources.hh.catalogue_only_nothing_named",
+                    host=site.host,
+                    corpus_due=len(corpus),
+                    detail="crawl.catalogue_only is on and no catalogue page named an id",
+                )
+        else:
+            plan.walk = [*catalogue_first, *corpus]
+        return plan
+
     def _log_site(
         self,
         site: HHSite,
@@ -2225,6 +2414,10 @@ class HHSource(BaseSource):
             catalog_slugs=catalog.slugs,
             role_pass=state.role_pass,
             role_hits=state.role_hits,
+            known_skipped=state.known_skipped,
+            stale_skipped=state.stale_skipped,
+            junk_avoided=state.junk_avoided,
+            catalogue_only=self.crawl.catalogue_only,
             budget_left=max(0, budget.remaining),
         )
 
@@ -2721,7 +2914,7 @@ class HHSource(BaseSource):
         if plan is None or not plan.slugs:
             return _CatalogPass()
 
-        wanted, offset = pages_this_run(plan)
+        wanted, offset = pages_this_run(plan, self.crawl.catalog_pages)
         ids: set[str] = set()
         opened: list[str] = []
         for slug in wanted:
@@ -2979,7 +3172,10 @@ class HHSource(BaseSource):
                 f"{', '.join(family.key for family in families) or 'нет'})."
             )
         else:
-            note = f"За прогон открывается {CATALOG_PAGES_PER_RUN} страниц каталога."
+            pages = self.crawl.catalog_pages or CATALOG_PAGES_PER_RUN
+            note = f"За прогон открывается {pages} страниц каталога."
+            if self.crawl.catalogue_only:
+                note += " Остальной корпус hh не читается: только вакансии этих профессий."
         return SearchPreview(
             use=SearchUse.CATALOG,
             terms=list(ranked[:PREVIEW_TERMS]),

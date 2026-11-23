@@ -416,7 +416,23 @@ class Settings(BaseSettings):
     # ── Pipeline ──────────────────────────────────────────────────────
     full_run_interval_hours: Annotated[int, Field(ge=1)] = 12
     incremental_run_interval_hours: Annotated[int, Field(ge=1)] = 3
+    #: How old a posting may be and still be asked for. Also the archive's
+    #: second rule: a vacancy whose ``published_at`` is older than this is made
+    #: inactive after each crawl (``VacancyRepository.archive_stale``), so it
+    #: leaves the lists and the scoring the way a closed one does.
     max_vacancy_age_days: Annotated[int, Field(ge=1)] = 45
+    #: The archive's first rule: a vacancy that no crawl has seen AND that was
+    #: not (re)published for this many days is made inactive. Both, because hh
+    #: does not re-fetch a posting it holds unchanged — its ``last_seen_at``
+    #: stands still while it is live — and its publication date is what moves
+    #: when the employer renews it. ``0`` turns the rule off.
+    vacancy_unseen_days: Annotated[int, Field(ge=0)] = 30
+    #: What a scoring pass over "the corpus" means: active vacancies whose
+    #: ``coalesce(published_at, first_seen_at)`` is within this many days. So a
+    #: new CV rescores a bounded, recent set rather than every row ever
+    #: crawled. Explicit ``vacancy_ids`` (the worker's case) are scored
+    #: whatever their age. ``0`` scores every active vacancy, as before.
+    scoring_window_days: Annotated[int, Field(ge=0)] = 30
 
     # ── Local apply agent (agent/) ────────────────────────────────────
     # The agent runs on the owner's own machine, under their own hh account,

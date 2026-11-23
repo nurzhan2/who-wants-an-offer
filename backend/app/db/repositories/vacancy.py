@@ -209,10 +209,14 @@ def _never_embedded() -> ColumnElement[bool]:
     touched a lot of rows and every one of them is already up to date" — two
     situations the wider predicate reports identically.
 
-    This is exactly the partial index ``ix_pg_vacancy_needs_embedding`` covers,
-    so the count is an index-only scan rather than a table sweep.
+    This is the partial index ``ix_pg_vacancy_needs_embedding``'s predicate,
+    so the count is an index scan rather than a table sweep — with
+    ``is_active`` checked on the rows it finds, see :func:`_needs_embedding`.
     """
-    return or_(Vacancy.embedding.is_(None), Vacancy.embedded_at.is_(None))
+    return and_(
+        Vacancy.is_active.is_(True),
+        or_(Vacancy.embedding.is_(None), Vacancy.embedded_at.is_(None)),
+    )
 
 
 def _needs_embedding() -> ColumnElement[bool]:
@@ -222,11 +226,23 @@ def _needs_embedding() -> ColumnElement[bool]:
     or when the row has been written since the vector was computed. Shared by
     the windowed selection and the count so the two can never disagree about
     which rows they are talking about.
+
+    **Active rows only**, since 23 Nov 2026. A description vector costs 8.55 s
+    on the owner's CPU, and an archived posting — closed, or stale by
+    :meth:`VacancyRepository.archive_stale` — is never scored, listed or
+    applied to, so a vector for it is eight seconds bought for nothing. The
+    archive itself writes ``updated_at``, which would otherwise put every row it
+    retires back into this predicate as "written since its vector". A row that
+    comes back to life on a later crawl is active again and is offered again,
+    and its hash decides whether the model sees it.
     """
-    return or_(
-        Vacancy.embedding.is_(None),
-        Vacancy.embedded_at.is_(None),
-        Vacancy.updated_at > Vacancy.embedded_at,
+    return and_(
+        Vacancy.is_active.is_(True),
+        or_(
+            Vacancy.embedding.is_(None),
+            Vacancy.embedded_at.is_(None),
+            Vacancy.updated_at > Vacancy.embedded_at,
+        ),
     )
 
 
@@ -642,6 +658,55 @@ class VacancyRepository:
             )
             known.update((await self.session.execute(stmt)).scalars().all())
         return known
+
+    async def archive_stale(
+        self,
+        *,
+        unseen_before: datetime | None,
+        published_before: datetime | None,
+    ) -> int:
+        """Make inactive what nothing vouches for any more. Returns rows retired.
+
+        Two rules, either of which retires a row, and either of which may be off
+        (``None``):
+
+        * **Not seen and not republished** since ``unseen_before``:
+          ``last_seen_at`` and ``coalesce(published_at, first_seen_at)`` both
+          older. Both, and not ``last_seen_at`` alone, because hh does not
+          re-fetch a posting it holds unchanged — the sitemap ``lastmod`` has not
+          moved, so the page is not bought — and its ``last_seen_at`` stands
+          still while the posting is live. What moves when an hh employer keeps
+          a posting up is its publication date (auto-renewal re-publishes it),
+          and a re-publication moves the ``lastmod``, which buys the page, which
+          writes both columns.
+        * **Published** before ``published_before``, whoever still lists it.
+          The planner asks no source for postings older than that
+          (``max_vacancy_age_days``), and this makes what is stored agree.
+
+        Reversible by the crawl, not by this: an upsert sets ``is_active`` back
+        to true, so a posting that turns up again is live again. One UPDATE, run
+        after every crawl; rows already inactive are not touched, so their
+        ``updated_at`` does not churn.
+        """
+        rules: list[ColumnElement[bool]] = []
+        if unseen_before is not None:
+            rules.append(
+                and_(
+                    Vacancy.last_seen_at < unseen_before,
+                    func.coalesce(Vacancy.published_at, Vacancy.first_seen_at) < unseen_before,
+                )
+            )
+        if published_before is not None:
+            rules.append(Vacancy.published_at < published_before)
+        if not rules:
+            return 0
+        stmt = (
+            sa_update(Vacancy)
+            .where(Vacancy.is_active.is_(True), or_(*rules))
+            .values(is_active=False, updated_at=func.now())
+        )
+        result = cast("CursorResult[Any]", await self.session.execute(stmt))
+        return int(result.rowcount or 0)
 
     async def mark_inactive(self, vacancy_ids: Sequence[UUID]) -> int:
         """Retire postings a source stopped returning. Returns rows touched."""
