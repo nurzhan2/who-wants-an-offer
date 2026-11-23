@@ -136,6 +136,25 @@ AI_MARKERS: tuple[str, ...] = (
     "eval",
     "ollama",
     "vllm",
+    # Classic NLP libraries: the owner's own skills section has an NLP line,
+    # and these sit beside the LLM work rather than under "Other".
+    "spacy",
+    "nltk",
+    "gensim",
+    "fasttext",
+    "bert",
+)
+
+#: Normalised fragments that mark an unknown skill as data or infrastructure
+#: work: analytical stores and the observability stack.
+DATA_MARKERS: tuple[str, ...] = (
+    "duckdb",
+    "opentelemetry",
+    "prometheus",
+    "grafana",
+    "sentry",
+    "jaeger",
+    "datadog",
 )
 
 
@@ -161,6 +180,8 @@ def group_of(name: str) -> str:
     folded = normalize(name)
     if any(marker in folded for marker in AI_MARKERS):
         return "ai"
+    if any(marker in folded for marker in DATA_MARKERS):
+        return "data"
     return "other"
 
 
@@ -192,12 +213,15 @@ def grouped(skills: list[tuple[str, str]], language: str) -> list[tuple[str, lis
         weight["backend"] += weight.pop("programming")
         first["backend"] = min(first["backend"], first.pop("programming"))
     # Any other minor line holding a single name joins "Other": a label with
-    # one value under it ("Tools & Testing: pytest") reads as a gap.
+    # one value under it ("Frontend: React") reads as a gap.
+    # A lone testing or tooling name ("pytest") is backend practice and closes
+    # the backend line instead.
     for group in SINGLETON_INTO_OTHER:
         if len(lines.get(group, ())) == 1 and len(lines) > 2:
-            lines.setdefault("other", []).extend(lines.pop(group))
-            weight["other"] = weight.get("other", 0) + weight.pop(group)
-            first["other"] = min(first.get("other", len(skills)), first.pop(group))
+            into = "backend" if group == "tools" and "backend" in lines else "other"
+            lines.setdefault(into, []).extend(lines.pop(group))
+            weight[into] = weight.get(into, 0) + weight.pop(group)
+            first[into] = min(first.get(into, len(skills)), first.pop(group))
     if len(lines) < 2:  # one group is just a plain line with a label on it
         return None
     # The line carrying most of what the arrangement put first leads — for an

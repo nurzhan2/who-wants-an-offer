@@ -420,7 +420,9 @@ async def test_the_card_offers_the_post_the_contact_and_a_message_to_copy(
     assert card.manual_apply.contact == "@synthetic_hr"
     assert card.manual_apply.post_url == "https://t.me/synthetic_jobs/1"
     assert "@synthetic_jobs" in card.manual_apply.message
-    assert card.manual_apply.message.endswith("Текст письма.")
+    message = card.manual_apply.message
+    assert message.startswith("Текст письма."), "the letter first, its own greeting kept"
+    assert message.endswith("Вакансия: https://t.me/synthetic_jobs/1 (канал @synthetic_jobs).")
 
 
 # ── the Telethon adapter, against a fake client ───────────────────────

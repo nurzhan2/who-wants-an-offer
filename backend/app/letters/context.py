@@ -215,6 +215,30 @@ def numbers_in(text: str) -> frozenset[str]:
     return frozenset(found)
 
 
+#: A decimal comma between digits: "95,3", but not the thousands of "1,200".
+_DECIMAL_COMMA = re.compile(r"(?<=\d),(?=\d{1,2}(?!\d))")
+
+#: Thousands grouped with a space or a no-break space, the Russian way: "14 000".
+_SPACED_THOUSANDS = re.compile(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))")
+
+
+def written_for(text: str, language: str) -> str:
+    """A summary's figures written the posting's way; their values untouched.
+
+    An English summary or letter quoting a resume that writes "95,3%" prints "95.3%",
+    and "14 000" becomes "14,000": a decimal comma reads to an English reader
+    as a thousands separator, which changes the number they think they read.
+    Only the separators change, so :func:`app.letters.context.numbers_in`
+    finds the same figure in both and the number checks still hold it to the
+    profile. Russian is left as written — its decimal comma is already right,
+    and turning a point into a comma would also turn "Python 3.12" into
+    something else.
+    """
+    if language != "en":
+        return text
+    return _SPACED_THOUSANDS.sub(",", _DECIMAL_COMMA.sub(".", text))
+
+
 def unsupported_numbers(text: str, evidence: str) -> tuple[str, ...]:
     """Figures in ``text`` that appear nowhere in ``evidence``, in text order.
 

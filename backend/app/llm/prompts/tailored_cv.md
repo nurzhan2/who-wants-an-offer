@@ -13,10 +13,14 @@ summary, and it must be in that language.
 
 ## What you are deciding
 
-1. **The order of the skills.** Put what this vacancy asks for first, in the
-   vacancy's own order, then the rest by how useful they are for this job. The
-   document prints them on labelled lines (backend, data, LLM, …) itself; your
-   order decides which line comes first and the order within each line.
+1. **Which skills, and in what order.** A recruiter gives the page ten
+   seconds; a skills section of every word in the resume hides the five that
+   answer this vacancy. List what this vacancy asks for first, in the
+   vacancy's own order, then only the skills the bullets and projects you show
+   actually use — about 10 to 16 in all. Skills that neither the vacancy asks
+   for nor the page shows are removed in code anyway. The document prints them
+   on labelled lines (backend, data, LLM, …) itself; your order decides which
+   line comes first and the order within each line.
 2. **The word each skill is shown under.** An employer's parser searches for
    literal strings, so a skill the vacancy calls `PostgreSQL` should be shown as
    `PostgreSQL` and not as `постгрес`; otherwise use the spelling the resume
@@ -28,10 +32,16 @@ summary, and it must be in that language.
    reason; leading with a directly relevant job is such a reason.
 4. **Which achievements each job shows, and in what order.** Each job lists its
    achievements with an index, `[0]`, `[1]`, … Return the indices you want
-   shown, **the one most relevant to this vacancy first**. Show 2 to
-   {{max_bullets}} for each recent job; an older or unrelated job may show fewer
-   or none. Prefer bullets with a measurable result and bullets that use the
-   vacancy's stack. The bullet text is printed exactly as recorded — you never
+   shown, **the one most relevant to this vacancy first**. Show 4 or
+   {{max_bullets}} for the main job — the most recent one, or the most relevant
+   — never all of them when there are more: the weakest one or two for this
+   vacancy are what make the strong ones easy to find. Show 2 or 3 for another
+   recent job; an older or unrelated job may show 1 or none. Prefer bullets
+   with a measurable result and bullets that use the vacancy's stack; a bullet
+   about mentoring or process goes after the ones about what was built. Many
+   resumes open each bullet with a short label ("Evaluation loop. Built…");
+   the label is printed in bold, so the first two labels are what a recruiter
+   reads first — make them the two that answer this vacancy. The bullet text is printed exactly as recorded — you never
    write, shorten or translate it, and an index that is not listed, or the same
    index twice, is rejected in code. The CV must fit one page: if it would run
    longer, the last bullets of the oldest jobs are dropped in code, so put the
@@ -48,9 +58,13 @@ summary, and it must be in that language.
    error in this document, because it is checkable by asking them.
 7. **The headline**, chosen verbatim from the list of allowed headlines below.
 8. **A short summary**, at most {{max_summary_chars}} characters: two or three
-   sentences, in the CV's language. Say what the candidate builds (role and core
-   stack that this vacancy asks for) and give one concrete result taken from
-   the achievements. Write sentences, not a list of technologies. Or return an
+   sentences, in the CV's language. The first says what the candidate builds —
+   the role and the core stack this vacancy asks for, in the vacancy's own
+   words for them. The next gives one or two concrete results taken from the
+   achievements, with their numbers. Write sentences, not a list of
+   technologies, and no "I am" or «я» opening: a CV summary starts with the
+   role or the result. In an English CV write a decimal with a point ("95.3%")
+   even where the resume wrote a comma — the value never changes. Or return an
    empty string if there is nothing true and useful to say.
 
 ## What you must never do

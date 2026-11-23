@@ -78,6 +78,7 @@ from app.letters.context import (
     fold,
     text_language,
     unsupported_numbers,
+    written_for,
 )
 from app.letters.examples import ChosenExample
 from app.letters.guard import (
@@ -890,8 +891,10 @@ def _proofs(context: LetterContext, language: str) -> list[str]:
     # One employer per paragraph: "At A, I:" over a bullet from B would
     # attribute B's work to A, which is the invention this letter must not make.
     same = [item for item in chosen if item.company == chosen[0].company]
+    # Quoted, with one liberty that changes no value: an English letter writes
+    # the resume's "9,1%" as "9.1%" (see :func:`written_for`).
     return [
-        "\n".join((lead, *(f"• {item.text}" for item in same[:count])))
+        "\n".join((lead, *(f"• {written_for(item.text, language)}" for item in same[:count])))
         for count in range(len(same), 0, -1)
     ]
 

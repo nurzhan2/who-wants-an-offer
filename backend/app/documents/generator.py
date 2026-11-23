@@ -74,7 +74,13 @@ from app.documents.render import (
     ProjectChoice,
     to_text,
 )
-from app.letters.context import AchievementFact, LetterContext, fold, text_language
+from app.letters.context import (
+    AchievementFact,
+    LetterContext,
+    fold,
+    text_language,
+    written_for,
+)
 from app.letters.context import build_context as letter_context
 from app.letters.prompt import FENCE_CLOSE, FENCE_OPEN
 from app.llm import usage as usage_ledger
@@ -685,30 +691,6 @@ def prune_skills(
     if len(kept) < floor:
         kept.extend(rest[: floor - len(kept)])
     return tuple(kept)
-
-
-#: A decimal comma between digits: "95,3", but not the thousands of "1,200".
-_DECIMAL_COMMA = re.compile(r"(?<=\d),(?=\d{1,2}(?!\d))")
-
-#: Thousands grouped with a space or a no-break space, the Russian way: "14 000".
-_SPACED_THOUSANDS = re.compile(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))")
-
-
-def written_for(text: str, language: str) -> str:
-    """A summary's figures written the posting's way; their values untouched.
-
-    An English summary quoting a resume that writes "95,3%" prints "95.3%",
-    and "14 000" becomes "14,000": a decimal comma reads to an English reader
-    as a thousands separator, which changes the number they think they read.
-    Only the separators change, so :func:`app.letters.context.numbers_in`
-    finds the same figure in both and the summary check still holds it to the
-    profile. Russian is left as written — its decimal comma is already right,
-    and turning a point into a comma would also turn "Python 3.12" into
-    something else.
-    """
-    if language != "en":
-        return text
-    return _SPACED_THOUSANDS.sub(",", _DECIMAL_COMMA.sub(".", text))
 
 
 #: Where one sentence ends and the next begins: a full stop, a question or an

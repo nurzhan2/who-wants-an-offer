@@ -167,6 +167,7 @@ known-first-party = ["app", "factories", "helpers"]
 # and the Cyrillic-alphabet word boundaries the guard's mention check turns on.
 "backend/tests/test_documents.py" = ["RUF001", "RUF002"]
 "backend/tests/test_documents_api.py" = ["RUF001", "RUF002"]
+"backend/tests/test_documents_layout.py" = ["RUF001", "RUF002", "RUF003"]
 # The source tests assert on Russian fixture data and Russian API messages.
 "backend/tests/test_source_quota.py" = ["RUF001", "RUF002"]
 "backend/tests/test_sources_api.py" = ["RUF001", "RUF002"]

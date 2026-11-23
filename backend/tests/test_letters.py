@@ -68,6 +68,7 @@ from app.letters import store
 from app.letters.channel import SourceScope
 from app.letters.context import (
     AchievementFact,
+    LetterContext,
     ProfileFacts,
     SkillFact,
     VacancyFacts,
@@ -90,6 +91,7 @@ from app.letters.examples import (
     OutcomeEvidence,
 )
 from app.letters.generator import (
+    FALLBACK_TARGET_CHARS,
     CoverLetterDraft,
     GeneratedLetter,
     LetterUnwritableError,
@@ -99,6 +101,7 @@ from app.letters.generator import (
     letter_numbers_unsupported,
 )
 from app.letters.guard import (
+    CHAT_MAX_LENGTH,
     DEFAULT_MAX_LENGTH,
     MIN_LENGTH,
     RUSSIAN,
@@ -2316,3 +2319,118 @@ def _returns(letter: GeneratedLetter) -> Any:
         return letter
 
     return _generate
+
+
+# ── the chat letter: a first message to a recruiter in Telegram ───────
+
+
+def chat_context(**vacancy: Any) -> LetterContext:
+    """An English posting answered in a chat, from a profile with results to quote."""
+    profile = profile_facts(
+        name="Alex Doe", achievements=ACHIEVEMENTS, locations=("Almaty",), remote="full"
+    )
+    facts = english_posting(channel="chat", letter_max_length=CHAT_MAX_LENGTH, **vacancy)
+    return build_context(facts, profile)
+
+
+@pytest.mark.unit
+def test_a_chat_letter_is_one_phone_screen_and_ends_on_a_question() -> None:
+    """600 to 900 characters, the role first, a result, where and when, a question."""
+    context = chat_context()
+
+    text = compose_fallback(context).text
+
+    assert len(text) <= FALLBACK_TARGET_CHARS["chat"] < CHAT_MAX_LENGTH
+    assert text.startswith("Hello,\n\nI'm applying for the Backend Engineer role at Northwind.")
+    assert "Would a short call this week work for you?" in text
+    assert "Based in Almaty, Kazakhstan (UTC+5); open to remote work." in text
+    assert "I also work with" not in text, "a quoted result beats a list of names"
+    assert find_problems(text, max_length=context.vacancy.letter_max_length) == []
+    assert letter_numbers_unsupported(text, context) == ()
+
+
+@pytest.mark.unit
+def test_where_and_which_format_only_when_the_posting_raises_it() -> None:
+    office = chat_context(description="Reporting APIs in Python on PostgreSQL, in our office.")
+
+    assert "Based in" not in compose_fallback(office).text
+
+
+@pytest.mark.unit
+def test_a_chat_letter_is_asked_for_in_chat_terms() -> None:
+    """The prompt and the reviewer both hear the chat's length, not hh's."""
+    from app.review.recruiter import _letter_length_note
+
+    context = chat_context()
+
+    rendered = prompts.render("cover_letter", **prompt_builder.variables(context))
+
+    assert "Telegram chat" in rendered and "600 to 900 characters" in rendered
+    assert f"**At most {CHAT_MAX_LENGTH} characters**" in rendered
+    assert "Telegram chat" in _letter_length_note(context)
+    letter = build_context(english_posting(), profile_facts())
+    assert "600 to 1 000" in prompt_builder.length_rule(letter)
+
+
+@pytest.mark.unit
+def test_the_recruiter_message_is_the_letter_then_the_post_in_the_letter_s_language() -> None:
+    """No second greeting above the letter, and no Russian line under an English one."""
+    from app.services.outreach import compose_message
+
+    english = compose_message(
+        "Hello,\n\nI'm applying for the LLM Engineer role.",
+        title="LLM Engineer",
+        post_url="https://t.me/jobs/1",
+        channel="jobs",
+        with_cv=True,
+    )
+    russian = compose_message(
+        "Здравствуйте!\n\nОткликаюсь на вакансию.",
+        title="LLM-инженер",
+        post_url="https://t.me/jobs/2",
+    )
+    bare = compose_message(None, title="LLM-инженер", post_url="https://t.me/jobs/3", channel="x")
+
+    assert english.endswith("\n\nThe post: https://t.me/jobs/1 (@jobs). My CV is attached.")
+    assert english.count("Hello") == 1
+    assert russian.endswith("\n\nВакансия: https://t.me/jobs/2.")
+    assert bare == "Здравствуйте! Пишу по вакансии «LLM-инженер» (канал @x): https://t.me/jobs/3"
+
+
+@pytest.mark.db
+async def test_a_vacancy_only_a_telegram_channel_lists_is_answered_in_a_chat(
+    db_session: AsyncSession, vacancies: VacancyRepository
+) -> None:
+    """The channel decides the length: a chat ceiling for Telegram, hh's form otherwise."""
+    vacancy, _, external_id, url, _ = make_upsert_item("letters-chat")
+    upserted = await vacancies.upsert_by_external_id(
+        vacancy, source_slug="telegram", external_id=external_id, url=url, raw={}
+    )
+    other, slug, other_id, other_url, _ = make_upsert_item("letters-form")
+    on_hh = await vacancies.upsert_by_external_id(
+        other, source_slug=slug, external_id=other_id, url=other_url, raw={}
+    )
+
+    chat = await store.load_vacancy_facts(db_session, upserted.vacancy_id)
+    form = await store.load_vacancy_facts(db_session, on_hh.vacancy_id)
+
+    assert chat is not None and chat.channel == "chat"
+    assert chat.letter_max_length == CHAT_MAX_LENGTH
+    assert form is not None and form.channel == "letter"
+
+
+@pytest.mark.unit
+def test_an_english_letter_quotes_a_result_in_english_notation() -> None:
+    """The resume wrote "9,1%"; an English reader takes that comma for thousands."""
+    quoted = AchievementFact(
+        company="Acme",
+        title="Backend Engineer",
+        text="Cut PostgreSQL report errors in Python jobs from 9,1% to 1,4%.",
+    )
+    profile = profile_facts(name="Alex Doe", achievements=(quoted,))
+    context = build_context(english_posting(), profile)
+
+    text = compose_fallback(context).text
+
+    assert "from 9.1% to 1.4%" in text
+    assert letter_numbers_unsupported(text, context) == (), "the same figures, other notation"

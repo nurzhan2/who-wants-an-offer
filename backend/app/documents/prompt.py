@@ -129,6 +129,8 @@ def experience_block(context: CVContext) -> str:
         period = "current" if entry.is_current else f"{entry.start or '?'}..{entry.end or '?'}"
         header = f"- ref {entry.ref}: {entry.title} at {entry.company} ({period})"
         lines.append(header)
+        if entry.company_note:
+            lines.append(f"    about the company: {entry.company_note}")
         if entry.stack:
             lines.append(
                 f"    stack, and the only technologies this job may show: {', '.join(entry.stack)}"
