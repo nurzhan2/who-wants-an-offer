@@ -1921,8 +1921,9 @@ def test_the_fallback_leads_each_job_with_the_bullets_that_answer_the_vacancy() 
     arrangement = compose_fallback(context)
     text = render.to_text(arrangement, context)
 
-    assert [job.bullets for job in arrangement.experience] == [(0, 1, 2, 3), (2, 0, 1, 3)]
-    order = [PAST_BULLETS[index] for index in (2, 0, 1, 3)]
+    # The older job shows three: the second job supports the first.
+    assert [job.bullets for job in arrangement.experience] == [(0, 1, 2, 3), (2, 0, 1)]
+    order = [PAST_BULLETS[index] for index in (2, 0, 1)]
     positions = [text.index(bullet) for bullet in (*CURRENT_BULLETS, *order)]
     assert positions == sorted(positions)
     assert inspect(arrangement, context) == []
@@ -1931,7 +1932,11 @@ def test_the_fallback_leads_each_job_with_the_bullets_that_answer_the_vacancy() 
 @pytest.mark.unit
 def test_the_fallback_caps_the_bullets_of_older_jobs_harder() -> None:
     """Older roles earn fewer lines, the way a person compresses a CV by hand."""
-    from app.documents.context import MAX_BULLETS_OLDER_JOB, MAX_BULLETS_PER_JOB
+    from app.documents.context import (
+        MAX_BULLETS_OLDER_JOB,
+        MAX_BULLETS_PER_JOB,
+        MAX_BULLETS_SECOND_JOB,
+    )
 
     many = tuple(f"Delivered project number {index}." for index in range(8))
     entries = tuple(
@@ -1943,9 +1948,10 @@ def test_the_fallback_caps_the_bullets_of_older_jobs_harder() -> None:
 
     assert [len(job.bullets) for job in arrangement.experience] == [
         MAX_BULLETS_PER_JOB,
-        MAX_BULLETS_PER_JOB,
+        MAX_BULLETS_SECOND_JOB,
         MAX_BULLETS_OLDER_JOB,
     ]
+    assert MAX_BULLETS_PER_JOB > MAX_BULLETS_SECOND_JOB > MAX_BULLETS_OLDER_JOB
 
 
 @pytest.mark.unit

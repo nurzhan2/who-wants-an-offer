@@ -58,6 +58,7 @@ from app.documents.context import (
     MAX_BULLETS_OLDER_JOB,
     MAX_BULLETS_PER_JOB,
     MAX_BULLETS_PER_PROJECT,
+    MAX_BULLETS_SECOND_JOB,
     MAX_EXPERIENCE_ENTRIES,
     MAX_PROJECTS_SHOWN,
     MAX_SUMMARY_CHARS,
@@ -741,11 +742,12 @@ def compose_fallback(context: CVContext, rules: Sequence[RuleSpec] = ()) -> CVAr
     vacancy's own order and under the vacancy's own spelling, then the rest in
     the order the profile holds them, and :func:`polish` keeps only those asked
     for or evidenced on the page. Jobs stay in the resume's order — reverse
-    chronological, as they were written — each showing up to
-    :data:`app.documents.context.MAX_BULLETS_PER_JOB` bullets for the two most
-    recent jobs and :data:`app.documents.context.MAX_BULLETS_OLDER_JOB` for
-    older ones, and a stack line of the vacancy's technologies and the ones its
-    shown bullets name.
+    chronological, as they were written — the main job showing up to
+    :data:`app.documents.context.MAX_BULLETS_PER_JOB` of its bullets (four or
+    five of the owner's seven, never all of them), the one before it
+    :data:`~app.documents.context.MAX_BULLETS_SECOND_JOB`, older ones
+    :data:`~app.documents.context.MAX_BULLETS_OLDER_JOB` — and a stack line
+    of the vacancy's technologies and the ones its shown bullets name.
 
     The bullets within a job are put in an order that needs no judgement: those
     naming more of the vacancy's requirements first (the research's rule for a
@@ -803,7 +805,13 @@ def compose_fallback(context: CVContext, rules: Sequence[RuleSpec] = ()) -> CVAr
     )
     jobs: list[JobChoice] = []
     for position, entry in enumerate(context.experience):
-        limit = MAX_BULLETS_PER_JOB if position < RECENT_JOBS else MAX_BULLETS_OLDER_JOB
+        limit = (
+            MAX_BULLETS_PER_JOB
+            if position == 0
+            else MAX_BULLETS_SECOND_JOB
+            if position < RECENT_JOBS
+            else MAX_BULLETS_OLDER_JOB
+        )
         bullets = _ranked(entry.achievements, context, limit)
         jobs.append(
             JobChoice(ref=entry.ref, stack=_stack(entry, bullets, context), bullets=bullets)

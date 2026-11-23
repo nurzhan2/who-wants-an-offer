@@ -66,10 +66,14 @@ MAX_SUMMARY_CHARS = 450
 #: one-page CV the sixth bullet of one job is the second job pushed off it.
 MAX_BULLETS_PER_JOB = 5
 
+#: What the rule-based CV shows for the second most recent job: the research's
+#: three to five is for the main role (C1); the one before it supports it.
+MAX_BULLETS_SECOND_JOB = 3
+
 #: What the rule-based CV shows for a job past the :data:`RECENT_JOBS` most
 #: recent: older roles earn fewer lines, the same compression a person applies
-#: by hand (S28).
-MAX_BULLETS_OLDER_JOB = 3
+#: by hand (S28, C1: "older or less relevant roles 1-3").
+MAX_BULLETS_OLDER_JOB = 2
 
 #: How many of the newest jobs count as recent for :data:`MAX_BULLETS_PER_JOB`.
 RECENT_JOBS = 2
