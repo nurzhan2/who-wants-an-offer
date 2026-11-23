@@ -794,7 +794,7 @@ def test_a_company_whose_name_is_a_domain_does_not_become_a_link() -> None:
     fallback = compose_fallback(context)
 
     assert "Kaspi.kz" not in fallback.text
-    assert "из стека вакансии работаю с Python и PostgreSQL" in fallback.text
+    assert "Из вашего стека работаю с Python и PostgreSQL" in fallback.text
     assert find_problems(fallback.text) == []
 
 
@@ -810,7 +810,7 @@ def test_a_matched_skill_is_never_dropped_the_way_a_company_name_is() -> None:
     profile = profile_facts(
         skills=(SkillFact(canonical_name="ceph", spelling="ceph.io", years=2.0),)
     )
-    context = build_context(vacancy_facts(key_skills=("Ceph",)), profile)
+    context = build_context(vacancy_facts(key_skills=("Ceph",), title="Storage Engineer"), profile)
     (matched,) = context.overlap.matched
     assert not is_safe(matched.possessed_as)
     assert is_safe(matched.required_as)
@@ -941,7 +941,7 @@ def test_an_english_posting_gets_a_short_english_fallback_letter() -> None:
 
     assert text.startswith("Hello,")
     assert "I'm applying for the Backend Engineer role at Northwind." in text
-    assert "I'm a Backend Engineer; from your stack, I work with Python and PostgreSQL." in text
+    assert "From your stack, I work with Python and PostgreSQL." in text
     assert f"• {ACHIEVEMENTS[1].text}" in text
     assert f"• {ACHIEVEMENTS[2].text}" in text
     assert "Kubernetes" not in text, "a requirement not held is not named"
@@ -964,7 +964,7 @@ def test_the_fallback_quotes_the_achievements_that_answer_the_vacancy() -> None:
 
     assert ACHIEVEMENTS[0].text not in text
     assert text.index(ACHIEVEMENTS[1].text) < text.index(ACHIEVEMENTS[2].text)
-    assert "At Acme, I:" in text
+    assert "From my work at Acme:" in text
 
 
 @pytest.mark.unit
@@ -983,7 +983,7 @@ def test_a_proof_in_the_other_language_is_not_pasted_into_the_letter() -> None:
 
 @pytest.mark.unit
 def test_a_proof_paragraph_never_mixes_two_employers() -> None:
-    """ "At Acme, I:" over a Globex bullet would give Acme credit for Globex's work."""
+    """ "From my work at Acme:" over a Globex bullet would give Acme credit for Globex's work."""
     mixed = (
         AchievementFact(company="Acme", title="Dev", text="Built a Python API for 3 teams."),
         AchievementFact(company="Globex", title="Dev", text="Tuned PostgreSQL for 8 services."),
@@ -992,7 +992,7 @@ def test_a_proof_paragraph_never_mixes_two_employers() -> None:
 
     text = compose_fallback(context).text
 
-    assert "At Acme, I:" in text
+    assert "From my work at Acme:" in text
     assert "Globex" not in text and mixed[1].text not in text
 
 

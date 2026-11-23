@@ -101,6 +101,9 @@ class ExperienceEntry(Facts):
     ref: int
     company: str
     title: str
+    #: The resume's own one-line description of the employer, verbatim, or
+    #: None. Printed in italics on the company line (migration 0022).
+    company_note: str | None = None
     #: "YYYY-MM", or None where the resume gave no date at all.
     start: str | None = None
     end: str | None = None
@@ -147,7 +150,11 @@ class EducationEntry(Facts):
     institution: str
     degree: str | None = None
     field: str | None = None
+    start_year: int | None = None
     end_year: int | None = None
+    #: The resume's lines under this degree (honours, courses, a contest
+    #: result), verbatim. Printed as stored and never chosen by a model.
+    details: tuple[str, ...] = ()
 
 
 class CVContext(BaseModel):
@@ -236,6 +243,7 @@ class CVContext(BaseModel):
                 for part in (
                     entry.title,
                     entry.company,
+                    entry.company_note,
                     entry.start,
                     entry.end,
                     *entry.achievements,
@@ -247,7 +255,14 @@ class CVContext(BaseModel):
         degrees = [
             " ".join(
                 str(part)
-                for part in (item.institution, item.degree, item.field, item.end_year)
+                for part in (
+                    item.institution,
+                    item.degree,
+                    item.field,
+                    item.start_year,
+                    item.end_year,
+                    *item.details,
+                )
                 if part
             )
             for item in self.education
@@ -337,6 +352,7 @@ def experience_from_rows(rows: list[dict[str, object]]) -> tuple[ExperienceEntry
                 ref=position,
                 company=company,
                 title=title,
+                company_note=_text(row.get("company_note")),
                 start=_month(row.get("start")),
                 end=_month(row.get("end")),
                 is_current=bool(row.get("is_current")),
@@ -382,15 +398,14 @@ def education_from_rows(rows: object) -> tuple[EducationEntry, ...]:
         institution = str(row.get("institution") or "").strip()
         if not institution:
             continue
-        end_year = row.get("end_year")
         entries.append(
             EducationEntry(
                 institution=institution,
                 degree=_text(row.get("degree")),
                 field=_text(row.get("field")),
-                end_year=end_year
-                if isinstance(end_year, int) and not isinstance(end_year, bool)
-                else None,
+                start_year=_year(row.get("start_year")),
+                end_year=_year(row.get("end_year")),
+                details=_strings(row.get("details")),
             )
         )
     return tuple(entries)
@@ -424,6 +439,11 @@ def projects_from_rows(rows: object) -> tuple[ProjectEntry, ...]:
             )
         )
     return tuple(entries)
+
+
+def _year(value: object) -> int | None:
+    """An integer year, or None for anything else (a bool is not a year)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _text(value: object) -> str | None:

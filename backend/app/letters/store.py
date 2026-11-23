@@ -54,6 +54,7 @@ from app.letters.examples import (
     OutcomeEvidence,
     grade_of,
 )
+from app.letters.guard import CHAT_MAX_LENGTH
 from app.matching.best import best_profile_id, is_best_match
 
 logger = get_logger(__name__)
@@ -98,18 +99,25 @@ async def best_profile_for(session: AsyncSession, vacancy_id: UUID) -> UUID | No
     return found if isinstance(found, UUID) else None
 
 
+#: The source whose vacancies are answered in a chat rather than a form.
+TELEGRAM_SOURCE = "telegram"
+
+
 async def load_vacancy_facts(session: AsyncSession, vacancy_id: UUID) -> VacancyFacts | None:
     """Everything about one vacancy the letter may use, or None if it is gone."""
     vacancy = await session.get(Vacancy, vacancy_id)
     if vacancy is None:
         return None
 
-    raws = [
-        source.raw
-        for source in (await session.scalars(_sources_of(vacancy_id))).all()
-        if isinstance(source.raw, dict)
-    ]
+    sources = (await session.scalars(_sources_of(vacancy_id))).all()
+    raws = [source.raw for source in sources if isinstance(source.raw, dict)]
     derived = [raw[DERIVED_KEY] for raw in raws if isinstance(raw.get(DERIVED_KEY), dict)]
+    # A vacancy listed only in a Telegram channel is answered in a chat with the
+    # recruiter the post names (app.services.outreach); one the agent can
+    # apply to on hh goes through hh's form, whatever else lists it.
+    slugs = {source.source_slug for source in sources}
+    chat = TELEGRAM_SOURCE in slugs and settings.agent_source_slug not in slugs
+    ceiling = letter_max_length(raws)
 
     return VacancyFacts(
         vacancy_id=vacancy.id,
@@ -122,7 +130,8 @@ async def load_vacancy_facts(session: AsyncSession, vacancy_id: UUID) -> Vacancy
         language_requirements=_strings(derived, "language_requirements"),
         work_experience=_work_experience(derived),
         professional_roles=role_names(raws),
-        letter_max_length=letter_max_length(raws),
+        letter_max_length=min(ceiling, CHAT_MAX_LENGTH) if chat else ceiling,
+        channel="chat" if chat else "letter",
     )
 
 

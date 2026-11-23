@@ -280,3 +280,18 @@ class ReviewedDocument(BaseModel):
     #: Excluded from serialisation: an API response carries the report and a
     #: download link, never a base64 file nobody asked for.
     content: bytes = Field(exclude=True, repr=False)
+    #: The same document as a PDF — what is sent to a recruiter — or None when
+    #: it could not be offered (its own audit found a critical fault).
+    pdf: bytes | None = Field(default=None, exclude=True, repr=False)
+
+    @property
+    def pdf_filename(self) -> str:
+        """The PDF's name: the .docx's, with the other extension."""
+        return f"{self.filename.rsplit('.', 1)[0]}.pdf"
+
+    @property
+    def preferred(self) -> tuple[str, bytes]:
+        """The file to send a person: the PDF when there is one, else the .docx."""
+        if self.pdf is not None:
+            return (self.pdf_filename, self.pdf)
+        return (self.filename, self.content)

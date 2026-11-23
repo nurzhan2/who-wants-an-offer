@@ -27,12 +27,61 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.repositories.source_state import SourceStateRepository
+from app.letters.context import text_language
 
 logger = get_logger(__name__)
 
 STATE_SLUG = "outreach"
 #: A Telegram username as a post writes it. 5-32 characters, letters first.
 HANDLE = re.compile(r"^@([A-Za-z][A-Za-z0-9_]{4,31})$")
+
+
+#: The line after the letter that says which post this answers and that the
+#: CV is attached, per language. After, not before: the letter already opens
+#: with a greeting and the role, and a second «Здравствуйте!» above it was
+#: the first thing a recruiter read (22 Nov 2026).
+FOOTER: dict[str, dict[str, str]] = {
+    "ru": {
+        "post": "Вакансия: {url}",
+        "channel": " (канал @{channel})",
+        "cv": " Резюме во вложении.",
+    },
+    "en": {"post": "The post: {url}", "channel": " (@{channel})", "cv": " My CV is attached."},
+}
+
+#: With no letter to carry the greeting, the message opens with one.
+BARE_OPENING: dict[str, str] = {
+    "ru": "Здравствуйте! Пишу по вакансии «{title}»{channel}: {url}",
+    "en": "Hello! I'm writing about the {title} role{channel}: {url}",
+}
+
+
+def compose_message(
+    letter: str | None,
+    *,
+    title: str,
+    post_url: str,
+    channel: str | None = None,
+    with_cv: bool = False,
+) -> str:
+    """The message to a recruiter: the letter, then which post and the CV.
+
+    In the letter's own language, so an English letter is not followed by a
+    Russian line. ``with_cv`` says the file goes with the message — true for
+    the worker, which attaches it; the message a person copies by hand does
+    not promise a file they may not attach.
+    """
+    language = text_language(letter or title, default="ru")
+    language = language if language in FOOTER else "en"
+    words = FOOTER[language]
+    if not letter:
+        where = words["channel"].format(channel=channel) if channel else ""
+        return BARE_OPENING[language].format(title=title, channel=where, url=post_url)
+    footer = words["post"].format(url=post_url)
+    if channel:
+        footer += words["channel"].format(channel=channel)
+    footer += "." + (words["cv"] if with_cv else "")
+    return f"{letter.strip()}\n\n{footer}"
 
 
 class Sender(Protocol):

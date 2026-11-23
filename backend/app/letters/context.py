@@ -37,7 +37,7 @@ Two shapes of the stored data are worth knowing before reading the code:
 """
 
 import re
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -85,6 +85,10 @@ class MatchedSkill(Facts):
     level: str | None = None
 
 
+#: Where a letter is read; see :attr:`VacancyFacts.channel`.
+type LetterChannel = Literal["letter", "chat"]
+
+
 class VacancyFacts(Facts):
     """Everything about one vacancy the letter may use."""
 
@@ -115,6 +119,11 @@ class VacancyFacts(Facts):
     professional_roles: tuple[str, ...] = ()
     #: This vacancy's ceiling, already resolved by :func:`letter_max_length`.
     letter_max_length: int = DEFAULT_MAX_LENGTH
+    #: Where the letter is read: ``"letter"`` in a job board's form or an
+    #: e-mail, ``"chat"`` as the first message to a recruiter in Telegram —
+    #: a vacancy found only in a Telegram channel. A chat message is shorter
+    #: and ends on a question; see :data:`app.letters.guard.CHAT_MAX_LENGTH`.
+    channel: LetterChannel = "letter"
 
 
 class AchievementFact(Facts):

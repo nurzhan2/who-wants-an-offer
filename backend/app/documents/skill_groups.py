@@ -21,10 +21,12 @@ LLM work and does not know "RAG", "pgvector" or "Anthropic API", so a short list
 of markers puts those on the AI line, which for the owner's track is the most
 important line on the page. Anything else unknown goes on a last line, "Other".
 
-**The order of the lines follows the arrangement.** A group's position is the
-position of its first skill in the arrangement's order, so the vacancy's
-requirements — which the arrangement puts first — pull their lines up. Within a
-line the arrangement's order is kept too.
+**The order of the lines follows the arrangement.** The line holding most of
+the arrangement's first :data:`LEADING_SKILLS` skills leads — and the
+arrangement puts the vacancy's own requirements first, so that is the LLM line
+for an LLM vacancy and the backend line for a backend one; the rest follow by
+the same count, then by where their first skill stands. Within a line the
+arrangement's order is kept.
 
 **When grouping is not worth it.** Fewer than :data:`MIN_SKILLS_TO_GROUP` skills,
 or skills that all land on one line, are printed as the single plain line they
@@ -75,6 +77,15 @@ LABELS: dict[str, dict[str, str]] = {
         "other": "Другое",
     },
 }
+
+#: How many of the arrangement's first skills decide which line leads. The
+#: arrangement puts the vacancy's own requirements first, and the first few of
+#: those say what the job is; counting all of them would let a long line of
+#: secondary tools outrank the line the role is named after.
+LEADING_SKILLS = 5
+
+#: Minor lines that join "Other" when they would hold a single name.
+SINGLETON_INTO_OTHER: tuple[str, ...] = ("programming", "frontend", "tools", "data")
 
 #: The skill dictionary's groups, mapped onto the CV's lines.
 DICTIONARY_GROUPS: dict[str, str] = {
@@ -165,19 +176,36 @@ def grouped(skills: list[tuple[str, str]], language: str) -> list[tuple[str, lis
         return None
     labels = LABELS.get(language, LABELS["en"])
     lines: dict[str, list[str]] = {}
-    for canonical, shown in skills:
+    weight: dict[str, int] = {}
+    first: dict[str, int] = {}
+    for position, (canonical, shown) in enumerate(skills):
         group = group_of(canonical)
         if group == "other":
             group = group_of(shown)
         lines.setdefault(group, []).append(shown)
+        weight[group] = weight.get(group, 0) + (1 if position < LEADING_SKILLS else 0)
+        first.setdefault(group, position)
     # One language alone is a thin line of its own ("Programming: Python"); it
     # leads the backend line instead, which is where a reader looks for it.
     if len(lines.get("programming", ())) == 1 and "backend" in lines:
-        merged = {"backend": lines.pop("programming") + lines["backend"]}
-        lines = merged | {group: names for group, names in lines.items() if group != "backend"}
+        lines["backend"] = lines.pop("programming") + lines["backend"]
+        weight["backend"] += weight.pop("programming")
+        first["backend"] = min(first["backend"], first.pop("programming"))
+    # Any other minor line holding a single name joins "Other": a label with
+    # one value under it ("Tools & Testing: pytest") reads as a gap.
+    for group in SINGLETON_INTO_OTHER:
+        if len(lines.get(group, ())) == 1 and len(lines) > 2:
+            lines.setdefault("other", []).extend(lines.pop(group))
+            weight["other"] = weight.get("other", 0) + weight.pop(group)
+            first["other"] = min(first.get("other", len(skills)), first.pop(group))
     if len(lines) < 2:  # one group is just a plain line with a label on it
         return None
-    # "Other" last whatever its first position: it is the line nobody looks
-    # for, and leading with it would push the vacancy's own stack down.
-    ordered = sorted(lines.items(), key=lambda item: item[0] == "other")
+    # The line carrying most of what the arrangement put first leads — for an
+    # LLM vacancy the LLM line, for a backend one the backend line — because
+    # the arrangement puts the vacancy's own requirements first. "Other" last
+    # whatever its weight: it is the line nobody looks for.
+    ordered = sorted(
+        lines.items(),
+        key=lambda item: (item[0] == "other", -weight[item[0]], first[item[0]]),
+    )
     return [(labels[group], names) for group, names in ordered]

@@ -36,9 +36,14 @@ one. Quote figures exactly as the achievement gives them and never move an
 achievement to another employer; **a number that is in neither the profile nor
 the vacancy is rejected in code**. (4) Format and time zone
 only if the vacancy cares. (5) A small concrete next step ("happy to do a
-technical call this week"). Aim for 600–1 000 characters, three or four short
-paragraphs; never more than 1 500. No adjectives about the candidate's
+technical call this week"). {{length_rule}} No adjectives about the candidate's
 character.
+
+**The first sentence carries the letter.** It names the exact role and one
+thing specific to this vacancy — a requirement from the list that the
+candidate holds, the product, the problem the description says the team is
+solving — and connects it to the candidate's work. "I'm interested in your
+vacancy" / «Меня заинтересовала ваша вакансия» says neither and is wasted.
 
 ## Hard rules
 

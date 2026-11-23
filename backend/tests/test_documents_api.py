@@ -315,6 +315,28 @@ async def test_a_stored_version_downloads_as_a_docx(
     assert response.content[:2] == b"PK"
 
 
+async def test_the_same_version_downloads_as_a_pdf_too(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    profiles: ProfileRepository,
+    vacancies: VacancyRepository,
+    matches: MatchRepository,
+    offline_router: None,
+) -> None:
+    """``?format=pdf`` is the file a recruiter opens: the same version, drawn as a PDF."""
+    _, vacancy_id = await seed(profiles, vacancies, matches, db_session)
+    document_id = (await client.post(f"{DOCUMENTS_URL}/cv/{vacancy_id}")).json()["document_id"]
+
+    response = await client.get(f"{DOCUMENTS_URL}/{document_id}/file", params={"format": "pdf"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content[:5] == b"%PDF-"
+    assert ".pdf" in response.headers["content-disposition"]
+    refused = await client.get(f"{DOCUMENTS_URL}/{document_id}/file", params={"format": "odt"})
+    assert refused.status_code == 422
+
+
 async def test_a_cyrillic_filename_survives_the_content_disposition_header(
     client: AsyncClient,
     db_session: AsyncSession,

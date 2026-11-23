@@ -60,7 +60,7 @@ from app.db.enums import (
 )
 from app.db.models import GeneratedDocument, VacancySkill
 from app.db.repositories import MatchRepository, ProfileRepository, VacancyRepository
-from app.documents import contacts, employer, guard, render, review, rules
+from app.documents import contacts, employer, guard, pdf, render, review, rules
 from app.documents import store as document_store
 from app.documents.context import (
     MAX_EXPERIENCE_ENTRIES,
@@ -381,8 +381,7 @@ def test_company_title_and_dates_come_from_the_rows_not_from_the_answer() -> Non
 
     text = render.to_text(arrangement, context)
 
-    assert "Python Developer — Пиксель-Мираж" in text
-    assert "февраль 2021 – март 2023" in text
+    assert "\nPython Developer\tфевраль 2021 – март 2023\nПиксель-Мираж\n" in text
     assert "Chocofamily" not in text
 
 
@@ -2026,12 +2025,13 @@ def test_an_english_cv_has_english_headings_and_no_russian_label() -> None:
 
     text = render.to_text(compose_fallback(context), context)
 
-    for heading in ("SUMMARY", "SKILLS", "EXPERIENCE", "EDUCATION", "LANGUAGES"):
+    for heading in ("SUMMARY", "SKILLS", "EXPERIENCE", "EDUCATION"):
         assert f"\n{heading}\n" in text
     assert "Stack: " in text
     assert "Apr 2023 – Present" in text
     assert "Feb 2021 – Mar 2023" in text
-    assert "Russian (native) · English (B2)" in text
+    # Spoken languages close the education section, as the owner's resume does.
+    assert text.rstrip().endswith("\nLanguages: Russian (native) · English (B2)")
     assert "Almaty" in text
     assert not any("Ѐ" <= char <= "ӿ" for char in text), text
 
@@ -2044,11 +2044,11 @@ def test_a_russian_cv_has_russian_headings_and_russian_dates() -> None:
 
     text = render.to_text(compose_fallback(context), context)
 
-    for heading in ("О СЕБЕ", "КЛЮЧЕВЫЕ НАВЫКИ", "ОПЫТ РАБОТЫ", "ОБРАЗОВАНИЕ", "ЯЗЫКИ"):
+    for heading in ("О СЕБЕ", "КЛЮЧЕВЫЕ НАВЫКИ", "ОПЫТ РАБОТЫ", "ОБРАЗОВАНИЕ"):
         assert f"\n{heading}\n" in text
     assert "апрель 2023 – настоящее время" in text
     assert "Стек: " in text
-    assert "Русский — родной · Английский — B2" in text
+    assert text.rstrip().endswith("\nЯзыки: Русский — родной · Английский — B2")
     for english in ("SUMMARY", "SKILLS", "EXPERIENCE", "Stack:", "Present"):
         assert english not in text
 
@@ -2088,6 +2088,7 @@ def test_the_file_is_a4_with_real_bullets_and_says_what_the_text_says() -> None:
     import io
 
     import docx
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     context = english_context()
     arrangement = compose_fallback(context)
@@ -2104,9 +2105,12 @@ def test_the_file_is_a4_with_real_bullets_and_says_what_the_text_says() -> None:
     assert name.runs[0].bold and name.runs[0].font.size.pt == render.SIZE_NAME
     bullet = next(p for p in paragraphs if p.text.startswith(render.BULLET))
     assert bullet.paragraph_format.first_line_indent.cm < 0
-    entry = next(p for p in paragraphs if p.text.startswith("Backend Developer — "))
-    assert entry.runs[0].bold
-    assert "\t" in entry.text and entry.text.endswith("Present")
+    entry = next(p for p in paragraphs if p.text.startswith("Backend Developer\t"))
+    assert entry.runs[0].bold and not entry.runs[-1].bold
+    assert entry.text.endswith("Present")
+    assert name.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert name.runs[0].font.name is None, "the face is the document's, set once"
+    assert document.styles["Normal"].font.name == render.FONT
     assert document.tables == []
 
 
@@ -2303,10 +2307,11 @@ def test_the_fallback_drops_a_summary_in_the_other_language() -> None:
 
 
 def _long_jobs() -> tuple[ExperienceEntry, ...]:
-    """Three jobs with long bullets: more than an A4 page holds."""
+    """Four jobs with long bullets: more than an A4 page holds."""
     text = (
         "Delivered a change to the order service that cut processing time for {n} internal "
-        "users and documented the rollout for the whole team."
+        "users, documented the rollout for the whole team and paired with QA on a release "
+        "plan so the next two rollouts shipped without a single rollback."
     )
     return tuple(
         ExperienceEntry(
@@ -2318,7 +2323,7 @@ def _long_jobs() -> tuple[ExperienceEntry, ...]:
             is_current=index == 0,
             achievements=tuple(text.format(n=10 * index + bullet) for bullet in range(6)),
         )
-        for index in range(3)
+        for index in range(4)
     )
 
 
@@ -2331,13 +2336,13 @@ def test_a_cv_too_long_for_a_page_loses_the_oldest_job_s_last_bullets_first() ->
     full = CVArrangement(
         headline="Backend Developer",
         skills=compose_fallback(context).skills,
-        experience=tuple(JobChoice(ref=index, bullets=(0, 1, 2, 3, 4)) for index in range(3)),
+        experience=tuple(JobChoice(ref=index, bullets=(0, 1, 2, 3, 4)) for index in range(4)),
     )
-    assert not render.fits_one_page(full, context)
+    assert not pdf.fits_one_page(full, context)
 
     fitted = fit_to_page(full, context)
 
-    assert render.fits_one_page(fitted, context)
+    assert pdf.fits_one_page(fitted, context)
     bullets = [job.bullets for job in fitted.experience]
     assert bullets[0] == (0, 1, 2, 3, 4), "the newest job is untouched"
     assert len(bullets[2]) < len(bullets[1]) or len(bullets[2]) == 1
@@ -2352,7 +2357,7 @@ def test_the_rule_based_cv_fits_a_page_even_for_a_long_career() -> None:
 
     arrangement = compose_fallback(context)
 
-    assert render.fits_one_page(arrangement, context)
+    assert pdf.fits_one_page(arrangement, context)
     assert all(len(job.bullets) >= 1 for job in arrangement.experience)
 
 
@@ -2405,7 +2410,7 @@ def test_projects_render_under_their_heading_with_verbatim_bullets(language: str
 
     heading = "PROJECTS" if language == "en" else "ПРОЕКТЫ"
     assert f"\n{heading}\n" in text
-    assert "Eval harness — github.com/example/eval-harness\t2025" in text
+    assert "\nEval harness — Python, pytest\tgithub.com/example/eval-harness\n" in text
     first = "• Runs in CI and blocks merges that drop the pass rate."
     assert text.index(first) < text.index("• CLI that scores 3 prompt variants")
     assert "Kafka playground" not in text
@@ -2470,7 +2475,7 @@ def test_fitting_a_page_cuts_project_bullets_before_job_bullets() -> None:
 
     fitted = fit_to_page(full, context)
 
-    assert render.fits_one_page(fitted, context)
+    assert pdf.fits_one_page(fitted, context)
     if fitted.experience != full.experience:
         assert all(len(choice.bullets) <= 1 for choice in fitted.projects)
 

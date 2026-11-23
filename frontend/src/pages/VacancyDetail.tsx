@@ -432,8 +432,12 @@ function CvVersions({ vacancyId }: { vacancyId: string }) {
       <ul className="mt-1 space-y-1">
         {versions.map((version) => (
           <li key={version.id}>
-            <a href={fileUrl(version.id)} className="underline underline-offset-4">
+            <a href={fileUrl(version.id, 'pdf')} className="underline underline-offset-4">
               CV, версия {version.version}
+            </a>
+            {' · '}
+            <a href={fileUrl(version.id)} className="underline underline-offset-4">
+              DOCX
             </a>
             <span className="text-muted">
               {' '}
@@ -464,8 +468,12 @@ function CvResult({ document }: { document: GeneratedDocument }) {
 
   return (
     <p className="mt-4 text-small">
+      <a href={fileUrl(document.document_id, 'pdf')} className="underline underline-offset-4">
+        {(document.filename ?? 'CV').replace(/\.docx$/, '.pdf')}
+      </a>
+      {' · '}
       <a href={fileUrl(document.document_id)} className="underline underline-offset-4">
-        {document.filename ?? 'CV'}
+        DOCX
       </a>
       {document.version === null ? '' : ` · версия ${String(document.version)}`}
       {document.review ? ` · ATS ${String(document.review.ats.score)}` : ''}

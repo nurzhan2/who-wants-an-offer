@@ -111,6 +111,8 @@ class ExperienceCreate(BaseModel):
     position: int = Field(ge=0)
     company: str = Field(max_length=300)
     title: str = Field(max_length=300)
+    #: The resume's own one-line description of the company, verbatim (0022).
+    company_note: str | None = Field(default=None, max_length=300)
     #: "YYYY-MM". A string and not a date: a resume that gives only a year does
     #: not state a month, and a date column would have to invent one.
     start: str | None = Field(default=None, max_length=7)

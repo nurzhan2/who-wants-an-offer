@@ -357,6 +357,10 @@ class ProfileExperience(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     company: Mapped[str] = mapped_column(String(300), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
+    #: The resume's own one-line description of the employer ("B2B marketplace
+    #: for industrial parts"), verbatim, or NULL (migration 0022). A CV prints
+    #: it in italics under the company, as the resume did.
+    company_note: Mapped[str | None] = mapped_column(String(300))
     #: "YYYY-MM" as the extraction normalises every date format to. Stored as
     #: text rather than a Date because a resume that gives only a year genuinely
     #: does not state a month, and inventing ``-01`` in the column would make

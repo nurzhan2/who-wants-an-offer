@@ -59,6 +59,7 @@ from app.schemas.dashboard import (
 )
 from app.schemas.match import MatchComponentScores, MatchedSkill, MissingSkill
 from app.schemas.vacancy import VacancyFilter, VacancyListItem, VacancyRead, VacancySourceRead
+from app.services import outreach
 from app.sources.registry import get_source
 
 logger = get_logger(__name__)
@@ -188,12 +189,12 @@ async def _manual_apply(
             .limit(1)
         )
         channel = derived.get("channel")
-        opening = (
-            f"Здравствуйте! Пишу по вакансии «{vacancy.title}»"
-            + (f" из канала @{channel}" if isinstance(channel, str) else "")
-            + f": {derived['post_url']}"
+        message = outreach.compose_message(
+            letter if isinstance(letter, str) else None,
+            title=vacancy.title,
+            post_url=derived["post_url"],
+            channel=channel if isinstance(channel, str) else None,
         )
-        message = opening + ("\n\n" + letter if isinstance(letter, str) and letter else "")
         return ManualApply(
             post_url=derived["post_url"],
             contact=contact if isinstance(contact, str) else None,

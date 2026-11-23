@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.db.enums import DocumentKind, DocumentSource, RuleScope
-from app.documents import contacts, generator, render, review, rules
+from app.documents import contacts, generator, pdf, render, review, rules
 from app.documents import store as document_store
 from app.documents.context import CVContext, build_context
 from app.documents.review import DocumentReview, ReviewedDocument
@@ -221,6 +221,7 @@ async def write_cv(
         text=generated.text,
         review=review.review(content, filename=filename, text=generated.text, context=context),
         content=content,
+        pdf=_audited_pdf(pdf.to_pdf(generated.arrangement, context), filename, vacancy_id),
     )
     problems = tuple(problem.value for problem in generated.rejected_for)
 
@@ -333,6 +334,7 @@ async def write_cover_letter(
         filename=filename,
         file_format=render.FILE_FORMAT,
         text=text,
+        pdf=pdf.letter_to_pdf(text, context),
         review=DocumentReview(
             # Audited as a letter, not as a resume. The unmodified audit scores a
             # perfectly good letter 28 and calls it unreadable, because it has no
@@ -430,11 +432,13 @@ async def rebuild(session: AsyncSession, document_id: UUID) -> ReviewedDocument 
 
     if row.kind is DocumentKind.COVER_LETTER:
         content = render.letter_to_docx(row.text, context)
+        drawn = pdf.letter_to_pdf(row.text, context)
         filename = render.letter_filename_for(context)
         coverage = review.NO_COVERAGE
     else:
         arrangement = render.CVArrangement.model_validate(row.payload)
         content = render.to_docx(arrangement, context)
+        drawn = pdf.to_pdf(arrangement, context)
         filename = render.filename_for(context)
         coverage = review.coverage_of(row.text, context)
 
@@ -444,7 +448,28 @@ async def rebuild(session: AsyncSession, document_id: UUID) -> ReviewedDocument 
         text=row.text,
         review=DocumentReview(ats=row.ats_report, coverage=coverage),
         content=content,
+        pdf=drawn,
     )
+
+
+def _audited_pdf(content: bytes, filename: str, vacancy_id: UUID) -> bytes | None:
+    """The CV's PDF if the PDF checks find nothing critical in it, else None.
+
+    The .docx is what the stored report audits; the PDF is what is sent, so it
+    gets the checks written for PDFs — text layer, columns, glyphs, fonts — on
+    its own bytes before it is offered. A PDF that failed them is not offered
+    at all and the .docx goes instead: the document is the same, only the file
+    a parser might misread is withheld.
+    """
+    report = review.audit_file(content, filename=f"{filename.rsplit('.', 1)[0]}.pdf")
+    if report.critical:
+        logger.warning(
+            "documents.cv.pdf_withheld",
+            vacancy_id=str(vacancy_id),
+            critical=[finding.code.value for finding in report.critical],
+        )
+        return None
+    return content
 
 
 def _source_of(source: str) -> DocumentSource:

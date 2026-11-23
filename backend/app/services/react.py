@@ -241,7 +241,9 @@ async def _cv_for(
     await session.commit()
     if written.document is None:
         return None
-    return (written.document.filename, written.document.content)
+    # The PDF: it is what a recruiter opens on a phone, and what Telegram
+    # previews; the .docx only when the PDF's own audit withheld it.
+    return written.document.preferred
 
 
 def _card(item: Any, facts: dict[str, Any], status: str) -> tuple[str, notify.Buttons]:
@@ -294,10 +296,12 @@ async def _outreach(
     letter_text = await _write_letter(session, item.vacancy_id, item.profile_id, budget)
     if not letter_text:
         return f"Автоотклик: письмо не написано (бюджет). Напишите сами: {contact}"
-    channel = f" из канала @{facts['channel']}" if facts.get("channel") else ""
-    text = (
-        f"Здравствуйте! Пишу по вакансии «{facts['title']}»{channel}: "
-        f"{facts['url']}\n\n{letter_text}"
+    text = outreach.compose_message(
+        letter_text,
+        title=facts["title"],
+        post_url=str(facts["url"]),
+        channel=facts.get("channel"),
+        with_cv=True,
     )
     return "Автоотклик: " + await outreach.send(
         session, sender, decision=decision, vacancy_key=str(item.vacancy_id), text=text, file=cv

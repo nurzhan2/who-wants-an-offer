@@ -1,26 +1,15 @@
 """Turning an arrangement plus the profile's rows into a file and its text.
 
-**The format is DOCX, and the choice is the auditor's rather than a preference.**
-``app/resume/ats_audit.py`` exists because phase 2 measured what an employer's
-parser gets from a two-column PDF resume: a sidebar heading welded onto a
-sentence from the other column, from which "the model extracts confident
-nonsense". Everything the audit reports as critical — ``NO_TEXT_LAYER``,
-``BROKEN_GLYPHS``, ``UNMAPPED_FONT``, ``COLUMN_INTERLEAVING`` — is a failure of
-the step that turns characters into drawn glyphs at fixed coordinates. A DOCX
-has no such step. Its text *is* text, in document order, and the four findings
-that cost the most points are unreachable by construction rather than avoided by
-care.
-
-The audit does raise ``FORMAT_NOT_PDF`` on a DOCX, and the honest thing is to
-quote it: it says most employers expect a PDF, and it costs zero points, because
-it is a note about what was checked rather than a defect. So the trade is a real
-one and it is stated where the owner can see it — the document is generated in
-the format that parses best, and the report handed over with it says in as many
-words that exporting to PDF changes the layout and should be re-audited. The
-other half of the choice is docs/ENGINEERING.md's rule about dependencies: ``python-docx``
-is already a project dependency, and no PDF writer is. ``reportlab`` is in the
-dev group, where it generates test fixtures; promoting a dev tool into the
-runtime to produce a format the auditor scores lower is the wrong trade twice.
+**Two files, one layout.** A .docx, because it is what hh and an applicant
+tracking system parse best — ``app/resume/ats_audit.py`` exists because phase 2
+measured what an employer's parser gets from a two-column PDF resume: a sidebar
+heading welded onto a sentence from the other column. A DOCX has no step that
+turns characters into glyphs at coordinates, so the audit's costliest findings
+(``NO_TEXT_LAYER``, ``BROKEN_GLYPHS``, ``COLUMN_INTERLEAVING``) are unreachable
+by construction. And a PDF (:mod:`app.documents.pdf`), because that is what a
+recruiter opens and what Telegram previews: drawn from the same typed lines,
+one column, its text layer in reading order, and audited by the same PDF checks
+before it is offered. Neither file is drawn from anything but :func:`layout`.
 
 **One column, no tables, no text boxes.** Not a style choice either.
 ``check_tables`` reports the share of words living inside a table and warns past
@@ -49,41 +38,47 @@ asserts that an English CV carries no Cyrillic label. What this module cannot
 translate is what it did not write: a bullet, a job title or a company is the
 owner's text and is printed as stored, in whatever language the resume used.
 
-**Layout, and why each number is what it is.** One A4 page is the target for
-the owner's 1–2 years (docs/WORKSHOP-RESEARCH.md, L1/L2): 1.8 cm side margins
-and 1.5 cm top and bottom, an 11 pt body, an 18 pt name, headings in bold
-capitals at 11 pt with a rule under them. A job is a bold "Title — Company" line
-with its period pushed to the right margin by a right-aligned tab stop — a tab,
-not a table, so the text layer reads "title, company, dates" in that order on
-one line, which is how an applicant tracking system attributes dates to a job.
-Bullets are paragraphs that begin with "• " under a hanging indent, rather than
-Word's numbering: a numbering definition is one more structure for a parser to
-interpret, and the glyph being real text is what keeps :func:`to_text` and the
-file saying the same characters.
+**Layout, and where it comes from.** The owner's own one-page resume is the
+quality bar: a serif face, the name and title centred over the contact lines,
+labelled skill lines, each role as a bold title with its period at the right
+margin over the employer and the resume's italic line about it, and bullets
+that open with a short **bold label** ("**Evaluation loop.** Built…") when the
+resume writes them that way. The label is found in the stored bullet and only
+drawn in bold; the text is the stored text. A period is pushed right with a
+right-aligned tab stop — a tab, not a table, so the text layer reads "title,
+dates" in that order on one line, which is how an applicant tracking system
+attributes dates to a job. Bullets are paragraphs that begin with "• " under a
+hanging indent rather than Word's numbering: a numbering definition is one more
+structure for a parser to interpret, and the glyph being real text is what
+keeps :func:`to_text` and the files saying the same characters. Every size and
+space is in :data:`STYLES`, read by both renderers.
 """
 
 import io
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from docx import Document as DocxDocument
-from docx.enum.text import WD_TAB_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.core.places import place_of
 from app.documents import skill_groups
 from app.documents.context import (
+    PERIOD_DASH,
     CVContext,
     EducationEntry,
     ExperienceEntry,
+    ProjectEntry,
     SkillChoice,
     render_period,
 )
-from app.letters.context import text_language
 
 #: What the file is. Kept as a constant because it is written into every stored
 #: row and read back to pick a media type.
@@ -130,8 +125,6 @@ class Headings:
 #: these are all capitals, which is also how the research's reference CVs set
 #: them; it maps both languages' spellings onto one section, so the owner's rule
 #: «в навыках не меньше 21 пункта» finds ``SKILLS`` and ``КЛЮЧЕВЫЕ НАВЫКИ``.
-#: ``projects`` is in the table for when projects are stored; nothing renders it
-#: today, because nothing records a project yet.
 HEADINGS: dict[str, Headings] = {
     "en": Headings(
         summary="SUMMARY",
@@ -189,64 +182,6 @@ LANGUAGE_NAMES: dict[str, dict[str, str]] = {
 NATIVE: dict[str, str] = {"en": "native", "ru": "родной"}
 
 
-@dataclass(frozen=True, slots=True)
-class Place:
-    """A city as each CV language writes it, with its country and UTC offset."""
-
-    en: str
-    ru: str
-    country_en: str
-    country_ru: str
-    utc: str
-
-
-#: The cities this market's candidates live in. The reference CVs open the
-#: contact line with "Almaty, Kazakhstan (UTC+5)": a remote recruiter's first
-#: two questions are where and which hours, and the city alone answers neither
-#: for someone who has never heard of it. None of this is a claim about the
-#: candidate — it is the geography of the city the profile records — and a
-#: city not listed here is printed exactly as stored, with nothing added.
-#: Kazakhstan has been on a single UTC+5 since March 2024.
-PLACES: tuple[Place, ...] = (
-    Place("Almaty", "Алматы", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Astana", "Астана", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Shymkent", "Шымкент", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Karaganda", "Караганда", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Aktobe", "Актобе", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Atyrau", "Атырау", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Pavlodar", "Павлодар", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Oskemen", "Усть-Каменогорск", "Kazakhstan", "Казахстан", "UTC+5"),
-    Place("Bishkek", "Бишкек", "Kyrgyzstan", "Кыргызстан", "UTC+6"),
-    Place("Tashkent", "Ташкент", "Uzbekistan", "Узбекистан", "UTC+5"),
-    Place("Moscow", "Москва", "Russia", "Россия", "UTC+3"),
-    Place("Saint Petersburg", "Санкт-Петербург", "Russia", "Россия", "UTC+3"),
-    Place("Minsk", "Минск", "Belarus", "Беларусь", "UTC+3"),
-    Place("Tbilisi", "Тбилиси", "Georgia", "Грузия", "UTC+4"),
-)
-
-#: Other spellings of the same cities, as resumes write them.
-PLACE_ALIASES: dict[str, str] = {
-    "алма-ата": "Almaty",
-    "alma-ata": "Almaty",
-    "нур-султан": "Astana",
-    "nur-sultan": "Astana",
-    "усть-каменогорск": "Oskemen",
-    "ust-kamenogorsk": "Oskemen",
-    "st. petersburg": "Saint Petersburg",
-    "санкт петербург": "Saint Petersburg",
-    "karagandy": "Karaganda",
-}
-
-
-def place_of(city: str) -> Place | None:
-    """The place a stored city names, in either alphabet, or None."""
-    key = " ".join(city.split()).casefold()
-    key = PLACE_ALIASES.get(key, key).casefold()
-    return next(
-        (place for place in PLACES if key in (place.en.casefold(), place.ru.casefold())), None
-    )
-
-
 #: How the profile's work-format preference is written in the header. Only the
 #: two that say something an employer filters on; "no" (on-site only) is the
 #: default reading of a CV with a city on it and is not printed.
@@ -259,34 +194,187 @@ WORK_FORMAT: dict[str, dict[str, str]] = {
 #: What a bullet line starts with, in the file and in the text alike.
 BULLET = "• "
 
-#: Point sizes. A name, a headline, a heading, a body and a note; the research's
-#: references use the same handful, and more than that reads as a template.
-SIZE_NAME = 18
-SIZE_HEADLINE = 11.5
-SIZE_HEADING = 11
-SIZE_BODY = 11
-SIZE_NOTE = 10
+#: Between a role's title and the line's other half, a company and its
+#: descriptor, a project and its stack, a degree and its institution.
+SEPARATOR = " — "
 
 #: A4, the paper every employer on this market and in Europe prints on. The
 #: python-docx template is US Letter, which turns a one-page CV into a page and
 #: two lines when an A4 reader opens it.
 PAGE_WIDTH_CM = 21.0
 PAGE_HEIGHT_CM = 29.7
-MARGIN_SIDE_CM = 1.8
-MARGIN_TOP_CM = 1.5
+MARGIN_SIDE_CM = 1.7
+MARGIN_TOP_CM = 1.3
 
 #: Where a job's period is pushed to: the right edge of the text block.
 RIGHT_EDGE_CM = PAGE_WIDTH_CM - 2 * MARGIN_SIDE_CM
 
-#: The hanging indent a bullet's continuation lines align under.
-BULLET_INDENT_CM = 0.27
+#: The typeface, by the name Word knows it and by the files the PDF embeds.
+#:
+#: A serif, because the quality bar is the owner's own LaTeX one-pager and a
+#: serif is most of what makes it read as one. Times New Roman specifically,
+#: and the reason is measurement rather than taste: Liberation Serif, which is
+#: vendored in ``fonts/`` under the SIL Open Font License and embedded in the
+#: PDF, is *metrically identical* to it — every glyph has the same advance
+#: width. So the .docx opened in Word, the .docx opened in LibreOffice (which
+#: maps Times New Roman onto Liberation Serif) and the PDF break every line at
+#: the same word, and "fits one page" measured once (:mod:`app.documents.pdf`)
+#: is true of all three. Cambria and Georgia look a little more modern, and
+#: neither has a free metric twin with Cyrillic, so with either of them the
+#: page measured would not be the page a recruiter opens. Both faces carry
+#: Cyrillic, which a Russian CV needs.
+FONT = "Times New Roman"
 
-#: The font. Present on every machine an employer opens a .docx on, and it has
-#: Cyrillic, which a Russian CV needs and a fallback font substitutes badly.
-FONT = "Calibri"
+#: Point sizes. A name, a headline, a heading, a body and a note; the research's
+#: references use the same handful, and more than that reads as a template.
+SIZE_NAME = 21
+SIZE_HEADLINE = 12.5
+SIZE_HEADING = 11.5
+SIZE_BODY = 11
+SIZE_NOTE = 10
 
-#: The quieter colour of the headline, the contact line and the stack line.
-GREY = RGBColor(0x44, 0x44, 0x44)
+#: Line height as a multiple of the size, set exactly in both files so a line
+#: is the same height in Word as in the PDF: Word's "single" spacing is a
+#: property of the font's own metrics and differs between applications.
+LEADING = 1.2
+
+#: Text colours, as hex. Near-black for the body; a quieter grey for the
+#: contact line, the stack line and the rules under headings.
+INK = "111111"
+GREY = "4A4A4A"
+RULE = "8C8C8C"
+
+#: The hanging indent a bullet's continuation lines align under: the width of
+#: "• " at the body size in this face (0.35 em for the bullet, 0.25 for the
+#: space), so the second line of a bullet starts exactly under its first word.
+BULLET_INDENT_PT = round(SIZE_BODY * 0.6, 2)
+
+
+class Align(StrEnum):
+    """How a line sits between the margins."""
+
+    LEFT = "left"
+    CENTER = "center"
+
+
+@dataclass(frozen=True, slots=True)
+class LineStyle:
+    """How one kind of line is drawn, by both renderers.
+
+    One table for the .docx and the PDF, so the two files cannot drift apart
+    in size or spacing; every number is in points.
+    """
+
+    size: float = SIZE_BODY
+    bold: bool = False
+    italic: bool = False
+    color: str = INK
+    align: Align = Align.LEFT
+    space_before: float = 0.0
+    space_after: float = 0.0
+    #: A bullet: continuation lines start under the first word, not the glyph.
+    hanging: bool = False
+    #: Never the last line on a page: a heading or a job's title line.
+    keep_with_next: bool = False
+    #: A thin rule under the line: the section headings.
+    rule_below: bool = False
+
+    @property
+    def leading(self) -> float:
+        """The height of one line of this kind, in points."""
+        return round(self.size * LEADING, 2)
+
+
+class LineKind(StrEnum):
+    """What a line of the layout is, which is what decides how it is drawn."""
+
+    NAME = "name"
+    HEADLINE = "headline"
+    CONTACT = "contact"
+    HEADING = "heading"
+    TEXT = "text"
+    #: A title with something pushed to the right margin: a role and its
+    #: period, a project and its link, a degree and its years.
+    ENTRY = "entry"
+    #: The line under a role: the employer, and the resume's own italic line
+    #: about what the employer is.
+    ORG = "org"
+    BULLET = "bullet"
+    #: The quiet line under a job's bullets: its technologies.
+    NOTE = "note"
+    #: "Backend: FastAPI, Django" — a labelled line of the skills section.
+    GROUP = "group"
+
+
+#: Every kind's style. Tight but readable: the space a section heading gets
+#: above it is what separates the sections, and everything inside a section is
+#: set close, the way the owner's LaTeX original is.
+STYLES: dict[LineKind, LineStyle] = {
+    LineKind.NAME: LineStyle(size=SIZE_NAME, bold=True, align=Align.CENTER, space_after=1),
+    LineKind.HEADLINE: LineStyle(size=SIZE_HEADLINE, align=Align.CENTER, space_after=2),
+    LineKind.CONTACT: LineStyle(size=SIZE_NOTE, color=GREY, align=Align.CENTER),
+    LineKind.HEADING: LineStyle(
+        size=SIZE_HEADING,
+        bold=True,
+        space_before=8,
+        space_after=3,
+        keep_with_next=True,
+        rule_below=True,
+    ),
+    LineKind.TEXT: LineStyle(space_after=1),
+    LineKind.GROUP: LineStyle(space_after=0.5),
+    LineKind.ENTRY: LineStyle(space_before=4, keep_with_next=True),
+    LineKind.ORG: LineStyle(space_after=1.5, keep_with_next=True),
+    LineKind.BULLET: LineStyle(hanging=True, space_after=1.5),
+    LineKind.NOTE: LineStyle(size=SIZE_NOTE, italic=True, color=GREY, space_after=0.5),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Span:
+    """A run of one line's text with its own weight or slant."""
+
+    text: str
+    bold: bool = False
+    italic: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Line:
+    """One line of the layout: its kind, its text, and what sits at its right.
+
+    ``spans`` say which parts of ``text`` are bold or italic — a bullet's
+    lead-in label, a project's stack. They are presentation only and they are
+    checked to *be* the text: a line whose spans spell anything else is a
+    programming error, raised at once, because the file would then say
+    something the plain text (and the audit) did not.
+    """
+
+    kind: LineKind
+    text: str
+    #: Right-aligned on the same line, after a tab: a job's period, a degree's
+    #: year. Part of the line's text in both renderings.
+    aside: str = ""
+    spans: tuple[Span, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.spans and "".join(span.text for span in self.spans) != self.text:
+            raise ValueError(f"spans do not spell the line: {self.text!r}")
+
+    @property
+    def runs(self) -> tuple[Span, ...]:
+        """The spans, or the whole text as one plain span."""
+        return self.spans or (Span(self.text),)
+
+    @property
+    def style(self) -> LineStyle:
+        """How this line is drawn."""
+        return STYLES[self.kind]
+
+    @property
+    def rendered(self) -> str:
+        """The line as plain text — and, character for character, as the file."""
+        return f"{self.text}\t{self.aside}" if self.aside else self.text
 
 
 def headings_for(language: str) -> Headings:
@@ -377,39 +465,6 @@ class CVArrangement(BaseModel):
         return converted
 
 
-class LineKind(StrEnum):
-    """What a line of the layout is, which is what decides how it is drawn."""
-
-    NAME = "name"
-    HEADLINE = "headline"
-    CONTACT = "contact"
-    HEADING = "heading"
-    TEXT = "text"
-    #: "Title — Company" with the period at the right margin.
-    ENTRY = "entry"
-    BULLET = "bullet"
-    #: The quiet line under a job's bullets: its technologies.
-    NOTE = "note"
-    #: "Backend: FastAPI, Django" — a labelled line of the skills section.
-    GROUP = "group"
-
-
-@dataclass(frozen=True, slots=True)
-class Line:
-    """One line of the layout: its kind, its text, and what sits at its right."""
-
-    kind: LineKind
-    text: str
-    #: Right-aligned on the same line, after a tab: a job's period, a degree's
-    #: year. Part of the line's text in both renderings.
-    aside: str = ""
-
-    @property
-    def rendered(self) -> str:
-        """The line as plain text — and, character for character, as the file."""
-        return f"{self.text}\t{self.aside}" if self.aside else self.text
-
-
 def _resolved(
     arrangement: CVArrangement, context: CVContext
 ) -> list[tuple[ExperienceEntry, JobChoice]]:
@@ -433,7 +488,14 @@ def _resolved(
 
 
 def _chosen(achievements: tuple[str, ...], indices: tuple[int, ...]) -> list[str]:
-    """The stored bullets at these indices, in this order, unknown ones skipped."""
+    """The stored bullets at these indices, in this order, unknown ones skipped.
+
+    An index the row does not have is skipped for the same reason an unknown
+    ref is: a stored arrangement can outlive a re-parse that shortened the
+    list, and an old version must render with less rather than with a wrong
+    bullet. The guard rejects such an index on a fresh arrangement, so this
+    only ever runs on old ones.
+    """
     shown: list[str] = []
     for index in indices:
         if 0 <= index < len(achievements) and achievements[index] not in shown:
@@ -441,22 +503,66 @@ def _chosen(achievements: tuple[str, ...], indices: tuple[int, ...]) -> list[str
     return shown
 
 
-def _bullets(entry: ExperienceEntry, job: JobChoice) -> list[str]:
-    """The chosen bullets' stored text, in the chosen order.
+#: A bullet that opens with a short label: "LLM sales agent. Designed and
+#: built…", «Оценка качества: собрал…». The label is the resume's own words and
+#: stays exactly where it is; only its weight changes.
+_LEAD_IN = re.compile(r"^(?P<label>[^\W\d_][^.:;!?\d]{1,46}?[.:])\s+(?=\S)")
 
-    An index the row does not have is skipped for the same reason an unknown
-    ref is: a stored arrangement can outlive a re-parse that shortened the list,
-    and an old version must render with less rather than with a wrong bullet.
-    The guard rejects such an index on a fresh arrangement, so this only ever
-    runs on old ones.
+#: The longest label, in words. Past this a "label" is a first sentence.
+MAX_LEAD_IN_WORDS = 5
+
+#: What has to follow a label for it to be one: a sentence, not a fragment.
+MIN_TEXT_AFTER_LEAD_IN = 20
+
+#: The fewest labelled bullets that make a list label-first.
+MIN_LABELLED_BULLETS = 2
+
+
+def lead_in(text: str) -> str:
+    """The short label a bullet opens with ("Evaluation loop."), or "".
+
+    A label is a few words without a figure, ending in a full stop or a colon,
+    with a real sentence after it. "Cut p95 latency by 40%. Then…" is not one
+    (it carries a number), nor is "Built the API." when the bullet ends there.
     """
-    shown: list[str] = []
-    for index in job.bullets:
-        if 0 <= index < len(entry.achievements):
-            text = entry.achievements[index]
-            if text not in shown:
-                shown.append(text)
-    return shown
+    found = _LEAD_IN.match(text)
+    if found is None:
+        return ""
+    label = found.group("label")
+    if len(label.split()) > MAX_LEAD_IN_WORDS:
+        return ""
+    if len(text) - found.end() < MIN_TEXT_AFTER_LEAD_IN:
+        return ""
+    return label
+
+
+def labels_bullets(achievements: tuple[str, ...]) -> bool:
+    """Whether a list of bullets is written in the label-first style.
+
+    Decided over the whole stored list rather than bullet by bullet: a resume
+    that leads every bullet with a bold label does it on purpose, and a single
+    bullet that happens to open with a short sentence is not that style. Half
+    or more is the line, and never fewer than two: a CV that bolds one bullet
+    in five, or the one bullet of a project, looks like a typo.
+    """
+    labelled = sum(1 for text in achievements if lead_in(text))
+    return labelled >= max(MIN_LABELLED_BULLETS, -(-len(achievements) // 2))
+
+
+def _bullet(text: str, *, labelled: bool) -> Line:
+    """One bullet line, its lead-in label in bold when the list uses them."""
+    label = lead_in(text) if labelled else ""
+    if not label:
+        return Line(LineKind.BULLET, f"{BULLET}{text}")
+    return Line(
+        LineKind.BULLET,
+        f"{BULLET}{text}",
+        spans=(Span(BULLET), Span(label, bold=True), Span(text[len(label) :])),
+    )
+
+
+#: Characters one centred contact line holds at the note size before it wraps.
+CONTACT_LINE_CHARS = 104
 
 
 def _contact_lines(context: CVContext) -> list[str]:
@@ -466,7 +572,8 @@ def _contact_lines(context: CVContext) -> list[str]:
     known city) and the work format the profile records, then email, phone,
     Telegram — where recruiters on this market start — and the code links. Two
     lines because one carrying all of it wraps at an arbitrary middle dot on A4;
-    split here, each half reads as a unit. Lines and not a table: see the module
+    split here, each half reads as a unit — three when the second would itself
+    wrap, the links then on a line of their own. Lines and not a table: see the module
     docstring. Links are printed as their addresses, which name themselves
     ("github.com/…"), so neither line carries a "Label:" a parser could mistake
     for a section.
@@ -487,9 +594,18 @@ def _contact_lines(context: CVContext) -> list[str]:
     if work_format:
         where.append(work_format)
     reach = [value.strip() for value in (contacts.email, contacts.phone) if value and value.strip()]
-    links = sorted(contacts.links, key=lambda link: link[0] != "Telegram")
-    reach.extend(_link_text(label, address) for label, address in links)
-    return [line for line in (" · ".join(where), " · ".join(p for p in reach if p)) if line]
+    reach.extend(
+        _link_text(label, address) for label, address in contacts.links if label == "Telegram"
+    )
+    links = [_link_text(label, address) for label, address in contacts.links if label != "Telegram"]
+    reach_line = " · ".join(part for part in reach if part)
+    links_line = " · ".join(part for part in links if part)
+    together = " · ".join(part for part in (reach_line, links_line) if part)
+    if len(together) <= CONTACT_LINE_CHARS:
+        return [line for line in (" · ".join(where), together) if line]
+    # Too long for one centred line: the code links get a line of their own
+    # rather than one of them wrapping alone onto a third.
+    return [line for line in (" · ".join(where), reach_line, links_line) if line]
 
 
 def _link_text(label: str, address: str) -> str:
@@ -530,14 +646,110 @@ def _languages_line(languages: tuple[str, ...], language: str) -> str:
     return " · ".join(item for item in rendered if item)
 
 
+def _labelled(label: str, values: str) -> Line:
+    """ "Backend: FastAPI, Django" with the label in bold."""
+    head = f"{label}:"
+    return Line(
+        LineKind.GROUP, f"{head} {values}", spans=(Span(head, bold=True), Span(f" {values}"))
+    )
+
+
+def _job_lines(entry: ExperienceEntry, job: JobChoice, language: str) -> list[Line]:
+    """A role, its employer, its bullets and its stack.
+
+    The owner's layout: the title in bold with the period at the right margin,
+    then the employer with the resume's own italic line about it, then the
+    bullets. A job stored with no title prints the employer on the first line
+    and has no second one.
+    """
+    period = render_period(entry, language)
+    lines: list[Line] = []
+    if entry.title:
+        lines.append(
+            Line(LineKind.ENTRY, entry.title, period, spans=(Span(entry.title, bold=True),))
+        )
+        if entry.company:
+            lines.append(_org_line(entry.company, entry.company_note))
+    else:
+        lines.append(
+            Line(LineKind.ENTRY, entry.company, period, spans=(Span(entry.company, bold=True),))
+        )
+    labelled = labels_bullets(entry.achievements)
+    lines.extend(
+        _bullet(text, labelled=labelled) for text in _chosen(entry.achievements, job.bullets)
+    )
+    if job.stack:
+        label = STACK_LABEL.get(language, STACK_LABEL["en"])
+        lines.append(Line(LineKind.NOTE, f"{label}: {', '.join(job.stack)}"))
+    return lines
+
+
+def _org_line(company: str, note: str | None) -> Line:
+    """ "Acme — B2B marketplace for industrial parts", the note in italics."""
+    if not note:
+        return Line(LineKind.ORG, company)
+    return Line(
+        LineKind.ORG,
+        f"{company}{SEPARATOR}{note}",
+        spans=(Span(company), Span(SEPARATOR), Span(note, italic=True)),
+    )
+
+
+def _project_lines(project: ProjectEntry, choice: ProjectChoice) -> list[Line]:
+    """ "Name — Python, pgvector" with its link at the right, then its bullets.
+
+    The owner's form: the name in bold and the stack in italics on the same
+    line, which says what it was built with without a "Stack:" line of its own.
+    The link goes to the right margin where a job's dates go; a project with no
+    link shows its year there instead.
+    """
+    spans = [Span(project.name, bold=True)]
+    if project.stack:
+        stack = ", ".join(project.stack)
+        spans.extend((Span(SEPARATOR), Span(stack, italic=True)))
+    text = "".join(span.text for span in spans)
+    aside = project.link or (str(project.year) if project.year else "")
+    lines = [Line(LineKind.ENTRY, text, aside, spans=tuple(spans))]
+    labelled = labels_bullets(project.achievements)
+    lines.extend(
+        _bullet(text, labelled=labelled) for text in _chosen(project.achievements, choice.bullets)
+    )
+    return lines
+
+
+def _education_lines(item: EducationEntry) -> list[Line]:
+    """One degree: degree and field in bold, the institution, the years; then its lines.
+
+    Degree and field first, then the institution — "BSc, Computer Science —
+    KazNU" — the way the reference CVs write it: the degree is what a filter
+    asks about, the institution what a reader checks second. The detail lines
+    (honours, courses, a contest result) are the resume's own and print as
+    bullets under it, exactly as stored.
+    """
+    head = ", ".join(part for part in (item.degree, item.field) if part)
+    if head:
+        text = f"{head}{SEPARATOR}{item.institution}"
+        spans: tuple[Span, ...] = (Span(head, bold=True), Span(f"{SEPARATOR}{item.institution}"))
+    else:
+        text, spans = item.institution, (Span(item.institution, bold=True),)
+    if item.start_year and item.end_year and item.start_year != item.end_year:
+        years = f"{item.start_year}{PERIOD_DASH}{item.end_year}"
+    else:
+        years = str(item.end_year or item.start_year or "")
+    lines = [Line(LineKind.ENTRY, text, years, spans=spans)]
+    labelled = labels_bullets(item.details)
+    lines.extend(_bullet(detail, labelled=labelled) for detail in item.details)
+    return lines
+
+
 def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
     """The document as typed lines, in the order it is laid out.
 
-    The single source of both renderings. The .docx draws these lines and the
-    plain text joins them, so the file and the text the audit reads cannot
-    describe different documents — which they could if each were assembled
-    separately, and nothing would notice until an audit explained a finding
-    that was not in the file.
+    The single source of every rendering. The .docx and the PDF draw these
+    lines and the plain text joins them, so the files and the text the audit
+    reads cannot describe different documents — which they could if each were
+    assembled separately, and nothing would notice until an audit explained a
+    finding that was not in the file.
     """
     language = context.language
     headings = headings_for(language)
@@ -561,20 +773,13 @@ def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
             shown = ", ".join(skill.shown_as for skill in arrangement.skills)
             lines.append(Line(LineKind.TEXT, shown))
         else:
-            lines.extend(
-                Line(LineKind.GROUP, f"{label}: {', '.join(names)}") for label, names in groups
-            )
+            lines.extend(_labelled(label, ", ".join(names)) for label, names in groups)
 
     resolved = _resolved(arrangement, context)
     if resolved:
         lines.append(Line(LineKind.HEADING, headings.experience))
         for entry, job in resolved:
-            period = render_period(entry, language)
-            lines.append(Line(LineKind.ENTRY, _job_title_line(entry), period))
-            lines.extend(Line(LineKind.BULLET, f"{BULLET}{text}") for text in _bullets(entry, job))
-            if job.stack:
-                label = STACK_LABEL.get(language, STACK_LABEL["en"])
-                lines.append(Line(LineKind.NOTE, f"{label}: {', '.join(job.stack)}"))
+            lines.extend(_job_lines(entry, job, language))
 
     shown_projects = [
         (project, choice)
@@ -584,93 +789,22 @@ def layout(arrangement: CVArrangement, context: CVContext) -> list[Line]:
     if shown_projects:
         lines.append(Line(LineKind.HEADING, headings.projects))
         for project, choice in shown_projects:
-            title = f"{project.name} — {project.link}" if project.link else project.name
-            year = str(project.year) if project.year else ""
-            lines.append(Line(LineKind.ENTRY, title, year))
-            lines.extend(
-                Line(LineKind.BULLET, f"{BULLET}{text}")
-                for text in _chosen(project.achievements, choice.bullets)
-            )
-            if project.stack:
-                label = STACK_LABEL.get(language, STACK_LABEL["en"])
-                lines.append(Line(LineKind.NOTE, f"{label}: {', '.join(project.stack)}"))
+            lines.extend(_project_lines(project, choice))
 
+    # Spoken languages close the education section on a labelled line, as the
+    # owner's original does; a CV with no degree to list gets them under a
+    # heading of their own.
+    spoken = _languages_line(context.profile.languages, language)
     if context.education:
         lines.append(Line(LineKind.HEADING, headings.education))
-        lines.extend(_education_line(item) for item in context.education)
-
-    spoken = _languages_line(context.profile.languages, language)
-    if spoken:
+        for item in context.education:
+            lines.extend(_education_lines(item))
+        if spoken:
+            lines.append(_labelled(headings.languages.capitalize(), spoken))
+    elif spoken:
         lines.extend((Line(LineKind.HEADING, headings.languages), Line(LineKind.TEXT, spoken)))
 
     return lines
-
-
-#: Characters of body text one line of the A4 text block holds at the body
-#: size, measured on the samples LibreOffice lays out (Carlito, metrically
-#: Calibri). A bullet loses its hanging indent; the header and the notes are
-#: set smaller and hold more.
-CHARS_PER_LINE = 95
-CHARS_PER_BULLET_LINE = 92
-CHARS_PER_SMALL_LINE = 108
-
-#: Cyrillic letters are wider than Latin ones in the same face: a line of
-#: Russian holds about this share of the characters a line of English does.
-CYRILLIC_WIDTH_SHARE = 0.82
-
-#: Body lines one page holds, in the units of :func:`estimated_lines`.
-#: Measured, not derived, by rendering untrimmed CVs through LibreOffice: a
-#: full A4 text block is about 62 units in either language (a sample estimated
-#: at 60.8 filled 745 of 757 points; a Russian one at 64.8 spilled onto a
-#: second page). A heading kept with its next line can push the last section
-#: over with a line or two still free, so the budget keeps that in reserve.
-PAGE_LINES = 59.5
-
-#: What each kind of line costs beyond its wrapped text: a larger size, or the
-#: space set before and after it.
-_LINE_COST: dict[LineKind, float] = {
-    LineKind.NAME: 1.9,
-    LineKind.HEADLINE: 1.15,
-    LineKind.CONTACT: 0.0,
-    LineKind.HEADING: 1.6,
-    LineKind.ENTRY: 0.6,
-    LineKind.BULLET: 0.15,
-    LineKind.NOTE: 0.0,
-    LineKind.GROUP: 0.08,
-    LineKind.TEXT: 0.08,
-}
-
-
-def estimated_lines(arrangement: CVArrangement, context: CVContext) -> float:
-    """How much of a page this arrangement fills, in body lines.
-
-    An estimate, and deliberately a slightly pessimistic one: rendering is
-    Word's or LibreOffice's, not this module's, and the only question asked of
-    the number is "does it fit on one page" (:data:`PAGE_LINES`). It wraps each
-    line at a measured number of characters and adds what the line's size and
-    spacing cost. A one-page CV is the research's rule for under three years of
-    experience (docs/WORKSHOP-RESEARCH.md, L1/L2), and a CV whose last section
-    spills onto page two looks unfinished.
-    """
-    total = 0.0
-    for line in layout(arrangement, context):
-        text = line.rendered
-        if line.kind is LineKind.BULLET:
-            width = CHARS_PER_BULLET_LINE
-        elif line.kind in (LineKind.CONTACT, LineKind.NOTE):
-            width = CHARS_PER_SMALL_LINE
-        else:
-            width = CHARS_PER_LINE
-        if text_language(text, default="en") == "ru":
-            width = int(width * CYRILLIC_WIDTH_SHARE)
-        wrapped = max(1, -(-len(text) // width))
-        total += wrapped + _LINE_COST.get(line.kind, 0.0)
-    return total
-
-
-def fits_one_page(arrangement: CVArrangement, context: CVContext) -> bool:
-    """Whether :func:`estimated_lines` stays within :data:`PAGE_LINES`."""
-    return estimated_lines(arrangement, context) <= PAGE_LINES
 
 
 def to_lines(arrangement: CVArrangement, context: CVContext) -> list[str]:
@@ -681,24 +815,6 @@ def to_lines(arrangement: CVArrangement, context: CVContext) -> list[str]:
             out.append("")
         out.append(line.rendered)
     return out
-
-
-def _job_title_line(entry: ExperienceEntry) -> str:
-    """ "Backend Developer — Kaspi" from the columns, never from an answer."""
-    parts = [part for part in (entry.title, entry.company) if part]
-    return " — ".join(parts)
-
-
-def _education_line(item: EducationEntry) -> Line:
-    """One degree on one line, its year at the right, omitting what was not stated.
-
-    Degree and field first, then the institution — "BSc, Computer Science —
-    KazNU" — the way the reference CVs write it: the degree is what a filter
-    asks about, the institution what a reader checks second.
-    """
-    head = ", ".join(part for part in (item.degree, item.field) if part)
-    text = f"{head} — {item.institution}" if head else item.institution
-    return Line(LineKind.ENTRY, text, str(item.end_year) if item.end_year else "")
 
 
 def to_text(arrangement: CVArrangement, context: CVContext) -> str:
@@ -720,6 +836,7 @@ def _page_setup(document: Any) -> None:
     normal = document.styles["Normal"]
     normal.font.name = FONT
     normal.font.size = Pt(SIZE_BODY)
+    normal.font.color.rgb = RGBColor.from_string(INK)
     # The east-Asian and complex-script slots are what Word falls back to for
     # characters the Latin slot does not cover; naming the font in all of them
     # keeps a Cyrillic word from being drawn in a different face.
@@ -729,7 +846,7 @@ def _page_setup(document: Any) -> None:
     spacing = normal.paragraph_format
     spacing.space_before = Pt(0)
     spacing.space_after = Pt(0)
-    spacing.line_spacing = 1.08
+    spacing.line_spacing = Pt(STYLES[LineKind.TEXT].leading)
 
 
 def _rule_under(paragraph: Paragraph) -> None:
@@ -745,66 +862,51 @@ def _rule_under(paragraph: Paragraph) -> None:
     bottom.set(qn("w:val"), "single")
     bottom.set(qn("w:sz"), "4")
     bottom.set(qn("w:space"), "1")
-    bottom.set(qn("w:color"), "808080")
+    bottom.set(qn("w:color"), RULE)
     borders.append(bottom)
     properties.append(borders)
 
 
 def _draw(document: Any, line: Line) -> None:
-    """One layout line as one paragraph, styled by its kind."""
+    """One layout line as one paragraph, styled from :data:`STYLES`."""
+    style = line.style
     paragraph = document.add_paragraph()
     spacing = paragraph.paragraph_format
-    if line.kind is LineKind.NAME:
-        run = paragraph.add_run(line.text)
-        run.bold = True
-        run.font.size = Pt(SIZE_NAME)
-        spacing.space_after = Pt(2)
-    elif line.kind is LineKind.HEADLINE:
-        run = paragraph.add_run(line.text)
-        run.font.size = Pt(SIZE_HEADLINE)
-        run.font.color.rgb = GREY
-        spacing.space_after = Pt(1)
-    elif line.kind is LineKind.CONTACT:
-        run = paragraph.add_run(line.text)
-        run.font.size = Pt(SIZE_NOTE)
-        run.font.color.rgb = GREY
-    elif line.kind is LineKind.HEADING:
-        run = paragraph.add_run(line.text)
-        run.bold = True
-        run.font.size = Pt(SIZE_HEADING)
-        spacing.space_before = Pt(12)
-        spacing.space_after = Pt(4)
+    spacing.space_before = Pt(style.space_before)
+    spacing.space_after = Pt(style.space_after)
+    # Exact, not "single": the PDF sets the same leading, so a line is the
+    # same height in both files (see :data:`LEADING`).
+    spacing.line_spacing = Pt(style.leading)
+    spacing.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    if style.align is Align.CENTER:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if style.keep_with_next:
         spacing.keep_with_next = True
+    if style.hanging:
+        spacing.left_indent = Pt(BULLET_INDENT_PT)
+        spacing.first_line_indent = Pt(-BULLET_INDENT_PT)
+    if style.rule_below:
         _rule_under(paragraph)
-    elif line.kind is LineKind.ENTRY:
-        spacing.space_before = Pt(7)
-        spacing.space_after = Pt(2)
-        spacing.keep_with_next = True
-        spacing.tab_stops.add_tab_stop(Cm(RIGHT_EDGE_CM), WD_TAB_ALIGNMENT.RIGHT)
-        paragraph.add_run(line.text).bold = True
-    elif line.kind is LineKind.BULLET:
-        spacing.left_indent = Cm(BULLET_INDENT_CM)
-        spacing.first_line_indent = Cm(-BULLET_INDENT_CM)
-        spacing.space_after = Pt(2)
-        paragraph.add_run(line.text)
-    elif line.kind is LineKind.GROUP:
-        label, _, values = line.text.partition(": ")
-        paragraph.add_run(f"{label}: ").bold = True
-        paragraph.add_run(values)
-        spacing.space_after = Pt(1)
-    elif line.kind is LineKind.NOTE:
-        run = paragraph.add_run(line.text)
-        run.italic = True
-        run.font.size = Pt(SIZE_NOTE)
-        run.font.color.rgb = GREY
-        spacing.space_before = Pt(1)
-    else:
-        spacing.tab_stops.add_tab_stop(Cm(RIGHT_EDGE_CM), WD_TAB_ALIGNMENT.RIGHT)
-        paragraph.add_run(line.text)
-        spacing.space_after = Pt(1)
+    for span in line.runs:
+        _run(paragraph, span.text, style, bold=span.bold, italic=span.italic)
     if line.aside:
-        paragraph.add_run("\t")
-        paragraph.add_run(line.aside)
+        spacing.tab_stops.add_tab_stop(Cm(RIGHT_EDGE_CM), WD_TAB_ALIGNMENT.RIGHT)
+        _run(paragraph, "\t", style)
+        _run(paragraph, line.aside, style)
+
+
+def _run(
+    paragraph: Paragraph, text: str, style: LineStyle, *, bold: bool = False, italic: bool = False
+) -> None:
+    """One run, carrying the line's size and colour and the span's emphasis."""
+    run = paragraph.add_run(text)
+    run.font.size = Pt(style.size)
+    if style.bold or bold:
+        run.bold = True
+    if style.italic or italic:
+        run.italic = True
+    if style.color != INK:
+        run.font.color.rgb = RGBColor.from_string(style.color)
 
 
 def to_docx(arrangement: CVArrangement, context: CVContext) -> bytes:
@@ -827,7 +929,7 @@ def to_docx(arrangement: CVArrangement, context: CVContext) -> bytes:
     return buffer.getvalue()
 
 
-def filename_for(context: CVContext) -> str:
+def filename_for(context: CVContext, file_format: str = FILE_FORMAT) -> str:
     """What the downloaded file is called.
 
     The candidate's name and the company, because the person downloading this
@@ -837,13 +939,22 @@ def filename_for(context: CVContext) -> str:
     """
     parts = [context.contacts.name or context.profile.name or "cv", context.vacancy.company or ""]
     stem = "-".join(_slug(part) for part in parts if _slug(part)) or "cv"
-    return f"{stem}.{FILE_FORMAT}"
+    return f"{stem}.{file_format}"
 
 
 def _slug(value: str) -> str:
     """A filename-safe fragment, keeping letters of either alphabet."""
     kept = [char if char.isalnum() else "-" for char in value.strip()]
     return "-".join(part for part in "".join(kept).split("-") if part)[:60]
+
+
+#: Between the paragraphs of a letter, in points.
+LETTER_PARAGRAPH_SPACE = 8
+
+
+def letter_paragraphs(text: str) -> list[str]:
+    """A letter's paragraphs as stored: split on blank lines, nothing added."""
+    return [part.strip() for part in text.split("\n\n") if part.strip()]
 
 
 def letter_to_docx(text: str, context: CVContext) -> bytes:
@@ -860,17 +971,20 @@ def letter_to_docx(text: str, context: CVContext) -> bytes:
     """
     document = DocxDocument()
     _page_setup(document)
-    for block in [part.strip() for part in text.split("\n\n")]:
+    style = LineStyle(size=SIZE_BODY + 0.5, space_after=LETTER_PARAGRAPH_SPACE)
+    for block in letter_paragraphs(text):
         paragraph = document.add_paragraph()
-        paragraph.paragraph_format.space_after = Pt(8)
-        run = paragraph.add_run(block)
-        run.font.size = Pt(SIZE_BODY + 0.5)
+        paragraph.paragraph_format.space_after = Pt(style.space_after)
+        paragraph.paragraph_format.line_spacing = Pt(style.leading)
+        # A single newline inside a paragraph (a proof's bullets) becomes a
+        # line break: python-docx writes "\n" in a run as <w:br/>.
+        _run(paragraph, block, style)
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
 
 
-def letter_filename_for(context: CVContext) -> str:
+def letter_filename_for(context: CVContext, file_format: str = FILE_FORMAT) -> str:
     """What the downloaded letter is called: the CV's name with a suffix."""
     stem = filename_for(context).rsplit(".", 1)[0]
-    return f"{stem}-letter.{FILE_FORMAT}"
+    return f"{stem}-letter.{file_format}"

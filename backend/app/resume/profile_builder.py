@@ -132,7 +132,7 @@ def to_profile_create(
         ),
         salary_currency=extraction.salary_currency,
         languages=[language.model_dump() for language in extraction.languages],
-        education=[degree.model_dump() for degree in extraction.education],
+        education=to_education(extraction),
         projects=to_projects(extraction),
         raw_text=document.raw_text,
         skills=[
@@ -182,6 +182,7 @@ def to_experience(extraction: ProfileExtraction) -> list[ExperienceCreate]:
                 position=len(rows),
                 company=company[:300],
                 title=title[:300],
+                company_note=_note(period.company_note),
                 start=period.start,
                 end=period.end,
                 is_current=period.is_current,
@@ -191,6 +192,38 @@ def to_experience(extraction: ProfileExtraction) -> list[ExperienceCreate]:
             )
         )
     return rows
+
+
+#: Longest company descriptor kept. The resume's line is a handful of words
+#: ("B2B marketplace for industrial parts"); past this the extraction has
+#: picked up a paragraph, and a paragraph is not what the CV's italic line is.
+MAX_COMPANY_NOTE_CHARS = 160
+
+#: Most lines kept under one degree. Honours, a course list and a contest
+#: result are the usual three; more is a transcript.
+MAX_EDUCATION_DETAILS = 4
+
+
+def _note(raw: str | None) -> str | None:
+    """A company descriptor as stored: whitespace collapsed, or None if unusable."""
+    text = " ".join((raw or "").split())
+    return text if text and len(text) <= MAX_COMPANY_NOTE_CHARS else None
+
+
+def to_education(extraction: ProfileExtraction) -> list[dict[str, object]]:
+    """The extraction's degrees as stored records, their detail lines cleaned.
+
+    The detail lines (honours, courses, a competition result) are quotations
+    like a job's bullets and are cleaned the same way: the glyph and blanks
+    go, the words stay.
+    """
+    return [
+        {
+            **degree.model_dump(),
+            "details": clean_achievements(degree.details)[:MAX_EDUCATION_DETAILS],
+        }
+        for degree in extraction.education
+    ]
 
 
 #: Most projects kept. A resume listing more is a portfolio page; a CV shows

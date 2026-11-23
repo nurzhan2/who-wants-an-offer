@@ -171,6 +171,14 @@ function Result({ document }: { document: GeneratedDocument }) {
             Скачать {document.file_format?.toUpperCase()}
           </a>
         )}
+        {document.document_id && (
+          <a
+            href={fileUrl(document.document_id, 'pdf')}
+            className="rounded-pill border border-obsidian px-5 py-2 text-body-sm text-obsidian transition-colors duration-slow ease-monopo hover:bg-obsidian hover:text-paper"
+          >
+            Скачать PDF
+          </a>
+        )}
       </div>
 
       {document.text && (

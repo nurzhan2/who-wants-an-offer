@@ -22,7 +22,7 @@ confirmation; it never submits an application itself.
 """
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 from uuid import UUID
 
@@ -35,6 +35,7 @@ from app.db.models import Vacancy
 from app.db.session import WorkSessions, get_session, get_work_sessions
 from app.documents import rules, service
 from app.documents import store as document_store
+from app.documents.pdf import MEDIA_TYPE as PDF_MEDIA_TYPE
 from app.documents.render import MEDIA_TYPE
 from app.documents.service import DocumentOutcome
 from app.letters import store as letter_store
@@ -331,17 +332,31 @@ async def list_rules(
 async def download(
     document_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    file_format: Annotated[
+        Literal["docx", "pdf"],
+        Query(alias="format", description="docx (the default) or pdf"),
+    ] = "docx",
 ) -> Response:
     """Rebuild the file from the stored arrangement and send it.
 
     A re-render rather than a stored blob — see
     :func:`app.documents.service.rebuild` for why a CV that keeps asserting a job
-    the resume no longer claims is the worse of the two failure modes.
+    the resume no longer claims is the worse of the two failure modes. The
+    .docx by default, for what links to it already; ``?format=pdf`` for the
+    file a recruiter opens, drawn from the same lines.
     """
     document = await service.rebuild(session, document_id)
     if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No such generated document"
+        )
+    if file_format == "pdf":
+        if document.pdf is None:  # pragma: no cover - rebuild always draws one
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No PDF")
+        return Response(
+            content=document.pdf,
+            media_type=PDF_MEDIA_TYPE,
+            headers={"Content-Disposition": _disposition(document.pdf_filename)},
         )
     return Response(
         content=document.content,

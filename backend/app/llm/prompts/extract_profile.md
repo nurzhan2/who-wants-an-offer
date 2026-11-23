@@ -52,6 +52,15 @@ nothing after it all mean the same thing: `end` is `null` and `is_current` is
   only the bullet glyph itself. One string per bullet. A plain duty list
   ("разработка API") counts too: record what is written. If the job has no
   bullets or description, use `[]`. Never move a bullet from one job to another.
+- `work_periods[].company_note` — the short line the resume prints beside or
+  under the employer's name to say what the company is or does ("B2B
+  marketplace for industrial parts", «сервис доставки продуктов»), **copied
+  word for word**, or `null` when there is none. Never write one yourself, and
+  never use a bullet for it.
+- `education[].details` — the lines the resume lists under a degree: honours,
+  GPA, notable courses, a competition or olympiad result — one string per
+  line, **copied word for word**, `[]` when there are none. `start_year` and
+  `end_year` are years only.
 - `projects` — personal, open-source, hackathon, course or thesis projects the
   resume lists **outside** its jobs: `name` as written, `link` (repository or
   demo address) or `null`, `stack`, `year` when stated, and `achievements` —

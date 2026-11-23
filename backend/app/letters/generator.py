@@ -68,6 +68,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.core.config import settings
 from app.core.exceptions import AppError, LLMError
 from app.core.logging import get_logger
+from app.core.places import place_of
 from app.db.enums import RuleKind, RuleScope
 from app.letters import prompt as prompt_builder
 from app.letters.context import (
@@ -687,11 +688,15 @@ class FallbackLetter:
     unnameable_skills: tuple[str, ...] = ()
 
 
-#: Where the rule-based letter stops adding proofs, in characters. The prompt
-#: asks the model for 600 to 1 000 and the research's band for a first message is
-#: the same (docs/WORKSHOP-RESEARCH.md, 4.6); a fallback that ran to the
-#: vacancy's 10 000 would be the one letter a recruiter does not finish.
-FALLBACK_TARGET_CHARS = 1000
+#: Where the rule-based letter stops adding proofs, in characters, by where it
+#: is read. The prompt asks the model for 600 to 1 000 in a form and 600 to 900
+#: in a Telegram chat, the research's bands for a first message
+#: (docs/WORKSHOP-RESEARCH.md, 4.6); a fallback that ran to the vacancy's
+#: 10 000 would be the one letter a recruiter does not finish.
+FALLBACK_TARGET_CHARS: dict[str, int] = {"letter": 1000, "chat": 900}
+
+#: Most matched skills the opening names. Past four the sentence is a list.
+OPENING_SKILLS = 4
 
 #: Most achievements the rule-based letter quotes. "One to three proofs" is the
 #: prompt's rule; two keeps the letter inside one phone screen.
@@ -703,12 +708,15 @@ PHRASES: dict[str, dict[str, str]] = {
     "ru": {
         "greeting": "Здравствуйте!",
         "identity": "Я — {headline}.",
-        "identity_stack": "Я — {headline}; из стека вакансии работаю с {skills}.",
-        "stack_only": "Из стека вакансии работаю с {skills}.",
+        "identity_stack": "Я — {headline}; из вашего стека работаю с {skills}.",
+        "stack_only": "Из вашего стека работаю с {skills}.",
         "proofs": "Что сделал в {company}:",
         "proofs_no_company": "Что сделал на последнем месте работы:",
         "other": "Также работаю с {skills}.",
+        "where": "{city}, открыт к удалённой работе.",
+        "where_hybrid": "{city}, открыт к гибридному формату.",
         "closing": "Буду рад созвониться на этой неделе и рассказать о проектах подробнее.",
+        "closing_chat": "Удобно созвониться на этой неделе? Расскажу о проектах подробнее.",
         "sign_off": "С уважением, {name}",
         "sign_off_bare": "С уважением",
         "and": "и",
@@ -718,10 +726,13 @@ PHRASES: dict[str, dict[str, str]] = {
         "identity": "I'm {article} {headline}.",
         "identity_stack": "I'm {article} {headline}; from your stack, I work with {skills}.",
         "stack_only": "From your stack, I work with {skills}.",
-        "proofs": "At {company}, I:",
-        "proofs_no_company": "In my current role, I:",
+        "proofs": "From my work at {company}:",
+        "proofs_no_company": "From my current role:",
         "other": "I also work with {skills}.",
+        "where": "Based in {city}; open to remote work.",
+        "where_hybrid": "Based in {city}; open to a hybrid setup.",
         "closing": "Happy to do a technical call this week and walk you through the work.",
+        "closing_chat": "Would a short call this week work for you?",
         "sign_off": "Best regards,\n{name}",
         "sign_off_bare": "Best regards",
         "and": "and",
@@ -770,45 +781,65 @@ def compose_fallback(context: LetterContext) -> FallbackLetter:
     headline = context.profile.headline
     headline = headline if headline and is_safe(headline) else None
 
-    paragraphs = [words["greeting"], _opening(title, company, language)]
+    target = FALLBACK_TARGET_CHARS.get(vacancy.channel, FALLBACK_TARGET_CHARS["letter"])
+    name = context.profile.name
+    tail = [
+        words["closing_chat"] if vacancy.channel == "chat" else words["closing"],
+        words["sign_off"].format(name=name) if name and is_safe(name) else words["sign_off_bare"],
+    ]
 
+    # The first paragraph names the role and, in the same breath, the part of
+    # this vacancy's own stack the candidate works with: the one specific thing
+    # a fallback can say without a model, and the research's first rule for an
+    # opening (R14).
+    # A headline that only repeats the vacancy's title is not said twice.
     named, unnameable = _nameable(context.overlap.matched)
+    named = named[:OPENING_SKILLS]
     skills = _enumerate([spelling for _, spelling in named], words["and"]) if named else ""
+    if headline and title and fold(headline) == fold(title) and skills:
+        headline = None
     if headline and skills:
-        paragraphs.append(
-            words["identity_stack"].format(
-                article=_article(headline), headline=headline, skills=skills
-            )
+        identity = words["identity_stack"].format(
+            article=_article(headline), headline=headline, skills=skills
         )
     elif skills:
-        paragraphs.append(words["stack_only"].format(skills=skills))
+        identity = words["stack_only"].format(skills=skills)
     elif headline:
-        paragraphs.append(words["identity"].format(article=_article(headline), headline=headline))
+        identity = words["identity"].format(article=_article(headline), headline=headline)
+    else:
+        identity = ""
+    opening = _opening(title, company, language)
+    paragraphs = [words["greeting"], f"{opening} {identity}".strip()]
 
+    proved = False
     for proof in _proofs(context, language):
-        if len("\n\n".join((*paragraphs, proof))) <= FALLBACK_TARGET_CHARS:
+        if len("\n\n".join((*paragraphs, proof, *tail))) <= target:
             paragraphs.append(proof)
+            proved = True
             break
 
-    # The rest of the stack, briefly, when it fits. With no achievement to
-    # quote — a profile parsed before migration 0020, or one whose bullets are
-    # all in the other language — it is the only evidence left, and without it
-    # the letter is a greeting and a sign-off.
-    # Names a quoted proof already carries are not repeated.
+    # The rest of the stack, only when no achievement could be quoted — a
+    # profile parsed before migration 0020, or one whose bullets are all in the
+    # other language. Then it is the only evidence left; beside a quoted result
+    # it is a list of names the vacancy did not ask for.
     quoted = "\n".join(paragraphs).casefold()
     other = [
         name for name in context.overlap.other if is_safe(name) and name.casefold() not in quoted
     ][:3]
-    if other:
+    if other and not proved:
         line = words["other"].format(skills=_enumerate(other, words["and"]))
-        if len("\n\n".join((*paragraphs, line))) <= FALLBACK_TARGET_CHARS:
+        if len("\n\n".join((*paragraphs, line, *tail))) <= target:
             paragraphs.append(line)
 
-    paragraphs.append(words["closing"])
-    name = context.profile.name
-    paragraphs.append(
-        words["sign_off"].format(name=name) if name and is_safe(name) else words["sign_off_bare"]
-    )
+    # Where and in which format, when the posting is about remote work: the
+    # first question a recruiter abroad asks (research 4.5, "format and time
+    # zone"). Both facts are the profile's; nothing is said when it records
+    # neither, and nothing about a format the vacancy did not raise.
+    where = _where(context, words, language)
+    if where and len("\n\n".join((*paragraphs, where, *tail))) <= target:
+        paragraphs.append(where)
+
+    paragraphs.extend(tail)
 
     text = _fit(paragraphs, vacancy.letter_max_length)
     return FallbackLetter(
@@ -920,15 +951,45 @@ def _nameable(
     return named, tuple(unnameable)
 
 
+#: Words that mark a posting as being about remote or hybrid work.
+_REMOTE_WORDS = re.compile(r"\b(?:remote|remotely|hybrid|удал[её]нн?\w*|гибрид\w*)", re.IGNORECASE)
+
+
+def _where(context: LetterContext, words: dict[str, str], language: str) -> str:
+    """ "Based in Almaty, Kazakhstan (UTC+5); open to remote work." when it answers the posting.
+
+    The city in the letter's language with its time zone when the shared
+    table knows it (:mod:`app.core.places`) — the offset is what a recruiter
+    in another country is asking — and as stored otherwise.
+    """
+    profile = context.profile
+    city = profile.locations[0] if profile.locations else ""
+    description = context.vacancy.description or ""
+    if not city or not is_safe(city) or not _REMOTE_WORDS.search(description):
+        return ""
+    place = place_of(city)
+    if place is not None:
+        city = (
+            f"{place.ru} ({place.utc})"
+            if language == "ru"
+            else f"{place.en}, {place.country_en} ({place.utc})"
+        )
+    if profile.remote == "full":
+        return words["where"].format(city=city)
+    if profile.remote == "hybrid":
+        return words["where_hybrid"].format(city=city)
+    return ""
+
+
 def _opening(title: str | None, company: str | None, language: str) -> str:
     """The sentence naming what is being applied for."""
     if language == "en":
         role = f"the {title} role" if title else "this role"
         where = f" at {company}" if company else ""
         return f"I'm applying for {role}{where}."
-    position = f"вакансия «{title}»" if title else "ваша вакансия"
+    position = f"вакансию «{title}»" if title else "вашу вакансию"
     where = f" в компании {company}" if company else ""
-    return f"Меня заинтересовала {position}{where}."
+    return f"Откликаюсь на {position}{where}."
 
 
 def _enumerate(values: list[str], conjunction: str) -> str:

@@ -249,6 +249,30 @@ def _join(values: tuple[str, ...]) -> str:
     return ", ".join(values)
 
 
+#: How long the letter should be and what shape, per channel. A form or an
+#: e-mail gets the research's band for a first message (4.6); a Telegram chat
+#: gets one phone screen, and ends on a question the recruiter can answer in a
+#: word, because that is how a chat continues (4.5, "a soft question CTA").
+LENGTH_RULES: dict[str, str] = {
+    "letter": (
+        "Aim for 600 to 1 000 characters, three or four short paragraphs; never more than 1 500."
+    ),
+    "chat": (
+        "This is the first message to the recruiter in a Telegram chat, read on "
+        "a phone: 600 to 900 characters, three or four very short paragraphs, never "
+        "more than the ceiling below. End on a short question the recruiter can "
+        'answer in a word ("Would a call this week work?"). The link to the '
+        "post and the CV file travel with the message separately: do not "
+        "mention attaching anything."
+    ),
+}
+
+
+def length_rule(context: LetterContext) -> str:
+    """The length and shape this letter is asked for, by where it will be read."""
+    return LENGTH_RULES.get(context.vacancy.channel, LENGTH_RULES["letter"])
+
+
 def variables(
     context: LetterContext,
     *,
@@ -277,6 +301,7 @@ def variables(
     return {
         "letter_language": context.language,
         "max_characters": str(context.vacancy.letter_max_length),
+        "length_rule": length_rule(context),
         "vacancy_facts": vacancy_block(context),
         "candidate_facts": candidate_block(context),
         "skill_overlap": overlap_block(context),

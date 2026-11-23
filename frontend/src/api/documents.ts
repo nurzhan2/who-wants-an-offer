@@ -45,6 +45,6 @@ export function listVersions(vacancyId: string, kind: DocumentKind): Promise<Doc
  * JavaScript and re-attaching a name would throw that header away and rebuild
  * it worse.
  */
-export function fileUrl(documentId: string): string {
-  return `${BASE}/${documentId}/file`
+export function fileUrl(documentId: string, format: 'docx' | 'pdf' = 'docx'): string {
+  return format === 'pdf' ? `${BASE}/${documentId}/file?format=pdf` : `${BASE}/${documentId}/file`
 }

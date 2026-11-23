@@ -38,6 +38,14 @@ class WorkPeriod(StrictModel):
 
     company: str
     title: str
+    #: The short line the resume prints beside or under the employer's name to
+    #: say what the company is ("B2B marketplace for industrial parts"),
+    #: verbatim, or null. A CV shows it in italics under the company, the way
+    #: the resume did; it is the owner's sentence and is never written for them.
+    company_note: str | None = Field(
+        default=None,
+        description="The resume's own one-line description of the company, verbatim, or null.",
+    )
     #: ISO "YYYY-MM". The prompt normalises every date format to this.
     start: str | None = Field(default=None, description="YYYY-MM, or null if absent.")
     #: Null while the job is current; ``is_current`` says which it is.
@@ -84,7 +92,15 @@ class Education(StrictModel):
     institution: str
     degree: str | None = None
     field: str | None = None
+    start_year: int | None = None
     end_year: int | None = None
+    #: What the resume adds under the degree — honours, a GPA, notable courses,
+    #: a competition result — one string per line, verbatim. Never written for
+    #: the owner: a CV prints these exactly as the resume did.
+    details: list[str] = Field(
+        default_factory=list,
+        description="Lines under this degree (honours, courses, awards), each verbatim.",
+    )
 
 
 class ExtractedProject(StrictModel):

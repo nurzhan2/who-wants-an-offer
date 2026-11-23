@@ -117,6 +117,7 @@ async def load_experience(session: AsyncSession, profile_id: UUID) -> tuple[Expe
                 "position": row.position,
                 "company": row.company,
                 "title": row.title,
+                "company_note": row.company_note,
                 "start": row.start,
                 "end": row.end,
                 "is_current": row.is_current,

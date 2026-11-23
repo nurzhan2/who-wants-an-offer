@@ -77,6 +77,13 @@ VERSION = 2
 
 DEFAULT_MAX_LENGTH = 10_000
 
+#: The ceiling for a first message to a recruiter in a Telegram chat, which is
+#: where a vacancy found in a channel is answered. The research's band for that
+#: message is 500 to 900 characters (docs/WORKSHOP-RESEARCH.md, L6, L8 and
+#: 4.6) — one phone screen — and the prompt asks for 600 to 900; this is the
+#: hard line a little above it, checked in code like hh's own ceiling.
+CHAT_MAX_LENGTH = 1_000
+
 #: Below this a "letter" is a stub — a greeting and a sign-off with nothing in
 #: between. Not a style judgement: a model that answers with one line has
 #: misunderstood the task, and saving that as a cover letter hides the failure

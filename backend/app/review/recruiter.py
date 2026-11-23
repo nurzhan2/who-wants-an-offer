@@ -100,6 +100,11 @@ class Verdict(BaseModel):
 
 
 def _letter_length_note(context: LetterContext) -> str:
+    if context.vacancy.channel == "chat":
+        return (
+            "600 to 900 characters for a first message in a Telegram chat, never more "
+            f"than {context.vacancy.letter_max_length}, ending on a short question"
+        )
     return (
         "600 to 1 000 characters for a message to a recruiter, never more than 1 500"
         if context.vacancy.letter_max_length >= 1500

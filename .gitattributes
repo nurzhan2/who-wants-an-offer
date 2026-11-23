@@ -8,3 +8,4 @@
 *.ico binary
 uv.lock linguist-generated=true
 frontend/package-lock.json linguist-generated=true
+*.ttf binary

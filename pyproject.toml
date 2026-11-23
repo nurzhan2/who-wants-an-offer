@@ -26,6 +26,11 @@ dependencies = [
     "filetype>=1.2.0",
     "pyyaml>=6.0.3",
     "telethon>=1.40",
+    # Draws the generated CV and letter as PDF, the format recruiters and
+    # Telegram expect. Pure Python (a py3-none-any wheel; its one binary
+    # dependency, Pillow, is already here through pdfplumber), so the slim
+    # Railway image needs no system package and no LibreOffice to make one.
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]
@@ -62,9 +67,6 @@ dev = [
     "ruff>=0.8.4",
     "mypy>=1.14",
     "pre-commit>=4.0",
-    # Generates the resume fixtures, including the two-column PDF that is the
-    # whole point of the extractor tests.
-    "reportlab>=4.2",
 ]
 
 [build-system]
@@ -326,6 +328,12 @@ ignore_missing_imports = true
 # in app/sources/_telegram_client.py and the login script.
 [[tool.mypy.overrides]]
 module = ["telethon", "telethon.*"]
+ignore_missing_imports = true
+
+# reportlab ships no type information either; it is used in one module,
+# app/documents/pdf.py, through a handful of calls typed at that boundary.
+[[tool.mypy.overrides]]
+module = ["reportlab", "reportlab.*"]
 ignore_missing_imports = true
 
 # ── pytest ────────────────────────────────────────────────────────────

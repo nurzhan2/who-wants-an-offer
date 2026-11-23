@@ -41,6 +41,7 @@ belong to :mod:`app.documents.render` and :mod:`app.documents.review`, because
 the checks here have to run before anything is written anywhere.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -59,16 +60,18 @@ from app.documents.context import (
     MAX_BULLETS_PER_PROJECT,
     MAX_EXPERIENCE_ENTRIES,
     MAX_PROJECTS_SHOWN,
+    MAX_SUMMARY_CHARS,
     RECENT_JOBS,
     CVContext,
+    ExperienceEntry,
     SkillChoice,
 )
 from app.documents.guard import CVProblem
+from app.documents.pdf import fits_one_page
 from app.documents.render import (
     CVArrangement,
     JobChoice,
     ProjectChoice,
-    fits_one_page,
     to_text,
 )
 from app.letters.context import AchievementFact, LetterContext, fold, text_language
@@ -80,7 +83,8 @@ from app.llm.router import LLMRouter, get_router
 from app.review import recruiter
 from app.review.recruiter import Verdict
 from app.workshop import rules as workshop_rules
-from app.workshop.rules import RuleSpec, RuleViolation
+from app.workshop.rules import RuleSpec, RuleViolation, SectionItemCountParams
+from app.workshop.sections import SECTION_ALIASES, fold_heading
 
 logger = get_logger(__name__)
 
@@ -389,7 +393,9 @@ async def generate(
             break
 
         usages.append(usage_ledger.record(result.usage))
-        arrangement = fit_to_page(to_arrangement(result.value, context), context)
+        arrangement = fit_to_page(
+            polish(to_arrangement(result.value, context), context, rules), context
+        )
         problems = inspect(arrangement, context)
         broken = workshop_rules.hard(
             workshop_rules.check(to_text(arrangement, context), scope=RuleScope.CV, rules=rules)
@@ -444,7 +450,7 @@ async def generate(
         # reviewer still wanted. The review polishes; the guards are the gate.
         return _reviewed(best, context, reviews, usages)
 
-    fallback = compose_fallback(context)
+    fallback = compose_fallback(context, rules)
     logger.warning(
         "documents.generate.fell_back",
         vacancy_id=str(context.vacancy.vacancy_id),
@@ -562,31 +568,212 @@ def _feedback(problems: Sequence[CVProblem], broken: Sequence[RuleViolation]) ->
     return "\n".join(part for part in parts if part)
 
 
-#: Most skills the rule-based CV lists. The research's range is 8 to 25 (C3);
-#: past that the section is the resume's whole vocabulary rather than a list an
-#: employer reads, and the ones cut are the last of the unrequested.
-MAX_FALLBACK_SKILLS = 25
+#: Most skills a CV lists, whichever branch arranged it. The research's range
+#: is 8 to 25 (C3), and the owner's own resume shows about fifteen on six
+#: labelled lines; a recruiter's ten-second read finds "do they know Postgres"
+#: in sixteen names and does not in forty. The ones cut are those the vacancy
+#: did not ask for and nothing shown on the page evidences.
+MAX_SKILLS_SHOWN = 16
+
+#: Most technologies the rule-based CV prints under one job.
+MAX_STACK_SHOWN = 8
+
+#: Most sentences a summary keeps: "two or three sentences" (L3).
+MAX_SUMMARY_SENTENCES = 3
 
 
-def compose_fallback(context: CVContext) -> CVArrangement:
+def asked_for(name: str, context: CVContext) -> bool:
+    """Whether the vacancy asks for this skill: in its list, or named in its text.
+
+    The description counts as well as the structured list because the list is
+    often short or missing (a Telegram post has none) while the text names the
+    stack in as many words; a skill the employer wrote down is one they asked
+    about either way.
+    """
+    if not name.strip():
+        return False
+    key = fold(name)
+    if key and key in {fold(requirement) for requirement in context.vacancy.key_skills}:
+        return True
+    return guard.mentions(context.vacancy.description or "", name)
+
+
+def shown_evidence(arrangement: CVArrangement, context: CVContext) -> str:
+    """Everything the page itself says the candidate did, outside the skills.
+
+    The bullets each shown job prints and the stack line under it, and each
+    shown project's name, stack and bullets. A skill named in here is one a
+    reader can see used, which is what earns it a place in the skills section
+    when the vacancy did not ask for it.
+    """
+    parts: list[str] = []
+    by_ref = context.by_ref
+    for job in arrangement.experience:
+        entry = by_ref.get(job.ref)
+        if entry is None:
+            continue
+        parts.extend(
+            entry.achievements[index] for index in job.bullets if index < len(entry.achievements)
+        )
+        parts.extend(job.stack)
+    projects = context.projects_by_ref
+    for choice in arrangement.projects:
+        project = projects.get(choice.ref)
+        if project is None:
+            continue
+        parts.extend((project.name, *project.stack))
+        parts.extend(
+            project.achievements[index]
+            for index in choice.bullets
+            if index < len(project.achievements)
+        )
+    return "\n".join(parts)
+
+
+def skills_floor(rules: Sequence[RuleSpec]) -> int:
+    """The fewest skills a CV may show: :data:`guard.MIN_SKILLS`, or the owner's own.
+
+    "At least 21 skills" is a hard rule an owner can write in the workshop,
+    and pruning below it would turn every CV into a refusal; their number wins.
+    """
+    floor = guard.MIN_SKILLS
+    for rule in rules:
+        params = rule.params
+        if (
+            rule.is_active
+            and isinstance(params, SectionItemCountParams)
+            and params.minimum is not None
+            and fold_heading(params.section) in SECTION_ALIASES[0]
+        ):
+            floor = max(floor, params.minimum)
+    return floor
+
+
+def prune_skills(
+    arrangement: CVArrangement, context: CVContext, *, floor: int = guard.MIN_SKILLS
+) -> tuple[SkillChoice, ...]:
+    """The skills worth the space: asked for, or evidenced on the page.
+
+    First every skill the vacancy asks for (:func:`asked_for`), then every skill
+    the page shows being used (:func:`shown_evidence`), each group in the
+    arrangement's own order, up to :data:`MAX_SKILLS_SHOWN`. The rest — the
+    resume's vocabulary that neither the employer nor the page mentions — goes,
+    unless that would leave fewer than ``floor``, in which case the first of
+    them come back. Only ever removes: nothing reaches the list that the
+    arrangement did not already hold.
+    """
+    evidence = shown_evidence(arrangement, context)
+    spellings: dict[str, set[str]] = {}
+    for skill in context.profile.skills:
+        spellings.setdefault(fold(skill.canonical_name), set()).update(
+            {skill.canonical_name, skill.spelling}
+        )
+    asked: list[SkillChoice] = []
+    seen: list[SkillChoice] = []
+    rest: list[SkillChoice] = []
+    for choice in arrangement.skills:
+        names = {choice.shown_as, choice.canonical_name} | spellings.get(
+            fold(choice.canonical_name), set()
+        )
+        if any(asked_for(name, context) for name in names):
+            asked.append(choice)
+        elif any(guard.mentions(evidence, name) for name in names):
+            seen.append(choice)
+        else:
+            rest.append(choice)
+    kept = [*asked, *seen][: max(MAX_SKILLS_SHOWN, floor)]
+    if len(kept) < floor:
+        kept.extend(rest[: floor - len(kept)])
+    return tuple(kept)
+
+
+#: A decimal comma between digits: "95,3", but not the thousands of "1,200".
+_DECIMAL_COMMA = re.compile(r"(?<=\d),(?=\d{1,2}(?!\d))")
+
+#: Thousands grouped with a space or a no-break space, the Russian way: "14 000".
+_SPACED_THOUSANDS = re.compile(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))")
+
+
+def written_for(text: str, language: str) -> str:
+    """A summary's figures written the posting's way; their values untouched.
+
+    An English summary quoting a resume that writes "95,3%" prints "95.3%",
+    and "14 000" becomes "14,000": a decimal comma reads to an English reader
+    as a thousands separator, which changes the number they think they read.
+    Only the separators change, so :func:`app.letters.context.numbers_in`
+    finds the same figure in both and the summary check still holds it to the
+    profile. Russian is left as written — its decimal comma is already right,
+    and turning a point into a comma would also turn "Python 3.12" into
+    something else.
+    """
+    if language != "en":
+        return text
+    return _SPACED_THOUSANDS.sub(",", _DECIMAL_COMMA.sub(".", text))
+
+
+#: Where one sentence ends and the next begins: a full stop, a question or an
+#: exclamation mark, a space, then a capital letter of either alphabet.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\u0410-\u042f\u0401])")
+
+
+def trimmed_summary(summary: str) -> str:
+    """The first two or three sentences of a summary that fit the length rule.
+
+    Whole sentences only, never a cut one: the rule-based CV quotes the
+    owner's own summary, and a quotation that stops mid-clause is worse than a
+    shorter one. Empty when even the first sentence is too long.
+    """
+    kept = ""
+    for count, sentence in enumerate(_SENTENCE_END.split(summary.strip()), start=1):
+        candidate = f"{kept} {sentence}".strip()
+        if count > MAX_SUMMARY_SENTENCES or len(candidate) > MAX_SUMMARY_CHARS:
+            break
+        kept = candidate
+    return kept
+
+
+def polish(
+    arrangement: CVArrangement, context: CVContext, rules: Sequence[RuleSpec] = ()
+) -> CVArrangement:
+    """What either branch's arrangement goes through before it is fitted and checked.
+
+    Two edits, both of which only remove or reformat: the skills are pruned to
+    what the vacancy asks for and the page evidences (:func:`prune_skills`),
+    and the summary's figures are written the posting's way
+    (:func:`written_for`). The checks then run on the result, so neither edit
+    can carry anything past them.
+    """
+    return arrangement.model_copy(
+        update={
+            "skills": prune_skills(arrangement, context, floor=skills_floor(rules)),
+            "summary": written_for(arrangement.summary, context.language),
+        }
+    )
+
+
+def compose_fallback(context: CVContext, rules: Sequence[RuleSpec] = ()) -> CVArrangement:
     """An arrangement built from the context alone, with no model involved.
 
-    Correct, complete and untailored beyond one ordering rule: skills the
-    vacancy asked for come first, in the vacancy's own order and under the
-    vacancy's own spelling, and everything else follows in the order the profile
-    holds it. Jobs stay in the resume's order — reverse chronological, as they
-    were written — and each shows its whole recorded stack and its achievements,
-    up to :data:`app.documents.context.MAX_BULLETS_PER_JOB` for the two most
+    Correct, complete and untailored beyond ordering and selection rules that
+    need no judgement. Skills the vacancy asked for come first, in the
+    vacancy's own order and under the vacancy's own spelling, then the rest in
+    the order the profile holds them, and :func:`polish` keeps only those asked
+    for or evidenced on the page. Jobs stay in the resume's order — reverse
+    chronological, as they were written — each showing up to
+    :data:`app.documents.context.MAX_BULLETS_PER_JOB` bullets for the two most
     recent jobs and :data:`app.documents.context.MAX_BULLETS_OLDER_JOB` for
-    older ones.
+    older ones, and a stack line of the vacancy's technologies and the ones its
+    shown bullets name.
 
     The bullets within a job are put in an order that needs no judgement: those
     naming more of the vacancy's requirements first (the research's rule for a
-    role, docs/WORKSHOP-RESEARCH.md 4.3), the resume's own order otherwise — so
-    a bullet that names nothing the vacancy asked for never moves ahead of one
-    the owner put first. :func:`relevance` counts, it does not judge. Projects
-    are chosen and ordered the same way, and page fitting then drops from the
-    end, which is now the least relevant line.
+    role, docs/WORKSHOP-RESEARCH.md 4.3), then those carrying a figure (C2),
+    the resume's own order otherwise — so the owner's first, label-led bullet
+    leads unless the vacancy plainly asks about another, and a bullet that
+    names nothing the vacancy asked for never moves ahead of one the owner put
+    first. :func:`relevance` counts, it does not judge. Projects are chosen and
+    ordered the same way, and page fitting then drops from the end, which is
+    now the least relevant line.
 
     The vacancy's spelling is used for a matched skill here, and that is not a
     liberty: ``matched`` means the fold keys agree, so the two strings are two
@@ -594,7 +781,8 @@ def compose_fallback(context: CVContext) -> CVArrangement:
     searching for. It is the single piece of tailoring that needs no model,
     which is why it is the piece this branch keeps.
 
-    The summary is the profile's own, and only when it passes the same check the
+    The summary is the profile's own — its first two or three whole sentences
+    within the length rule — and only when it passes the same check the
     model's would and is written in the CV's language: it was written by a
     person about themselves, but it is prose, and prose is where an unsupported
     claim lives — and a Russian paragraph under ``SUMMARY`` is the mixed-language
@@ -618,9 +806,9 @@ def compose_fallback(context: CVContext) -> CVArrangement:
         if key not in used:
             skills.append(SkillChoice(canonical_name=skill.canonical_name, shown_as=skill.spelling))
 
-    summary = (context.profile.summary or "").strip()
+    summary = trimmed_summary(context.profile.summary or "")
     if (
-        guard.check_summary(summary, context)
+        guard.check_summary(written_for(summary, context.language), context)
         or text_language(summary, default=context.language) != context.language
     ):
         summary = ""
@@ -631,31 +819,46 @@ def compose_fallback(context: CVContext) -> CVArrangement:
             -relevance(" ".join((project.name, *project.stack, *project.achievements)), context)
         ),
     )
+    jobs: list[JobChoice] = []
+    for position, entry in enumerate(context.experience):
+        limit = MAX_BULLETS_PER_JOB if position < RECENT_JOBS else MAX_BULLETS_OLDER_JOB
+        bullets = _ranked(entry.achievements, context, limit)
+        jobs.append(
+            JobChoice(ref=entry.ref, stack=_stack(entry, bullets, context), bullets=bullets)
+        )
     arrangement = CVArrangement(
         headline=context.allowed_headlines[0] if context.allowed_headlines else "",
         summary=summary,
-        skills=tuple(skills[:MAX_FALLBACK_SKILLS]),
-        experience=tuple(
-            JobChoice(
-                ref=entry.ref,
-                stack=entry.stack,
-                bullets=_ranked(
-                    entry.achievements,
-                    context,
-                    MAX_BULLETS_PER_JOB if position < RECENT_JOBS else MAX_BULLETS_OLDER_JOB,
-                ),
-            )
-            for position, entry in enumerate(context.experience)
-        ),
+        skills=tuple(skills),
+        experience=tuple(jobs),
         projects=tuple(
             ProjectChoice(
                 ref=project.ref,
-                bullets=_ranked(project.achievements, context, MAX_BULLETS_PER_PROJECT),
+                # Chosen by rank, printed in the resume's order: a project's
+                # first bullet says what it is, and the rest only make sense
+                # after it.
+                bullets=tuple(
+                    sorted(_ranked(project.achievements, context, MAX_BULLETS_PER_PROJECT))
+                ),
             )
             for project in projects[:MAX_PROJECTS_SHOWN]
         ),
     )
-    return fit_to_page(arrangement, context)
+    return fit_to_page(polish(arrangement, context, rules), context)
+
+
+def _stack(entry: ExperienceEntry, bullets: tuple[int, ...], context: CVContext) -> tuple[str, ...]:
+    """A job's stack line: the vacancy's technologies first, then those its bullets name.
+
+    Only ever a subset of what the resume attributed to this job, in the
+    order: asked for by the vacancy, then named in the bullets shown, then the
+    rest of the recorded stack — cut at :data:`MAX_STACK_SHOWN`.
+    """
+    shown = "\n".join(entry.achievements[index] for index in bullets)
+    asked = [name for name in entry.stack if asked_for(name, context)]
+    named = [name for name in entry.stack if name not in asked and guard.mentions(shown, name)]
+    rest = [name for name in entry.stack if name not in asked and name not in named]
+    return tuple([*asked, *named, *rest][:MAX_STACK_SHOWN])
 
 
 def relevance(text: str, context: CVContext) -> int:
@@ -672,10 +875,18 @@ def relevance(text: str, context: CVContext) -> int:
 
 
 def _ranked(achievements: tuple[str, ...], context: CVContext, limit: int) -> tuple[int, ...]:
-    """Indices of the most relevant bullets, most relevant first, resume order on ties."""
+    """Indices of the strongest bullets for this vacancy, strongest first.
+
+    By how many requirements a bullet names, then by whether it carries a
+    figure, then by the resume's own order.
+    """
     order = sorted(
         range(len(achievements)),
-        key=lambda index: (-relevance(achievements[index], context), index),
+        key=lambda index: (
+            -relevance(achievements[index], context),
+            not any(char.isdigit() for char in achievements[index]),
+            index,
+        ),
     )
     return tuple(order[:limit])
 
@@ -690,7 +901,7 @@ def fit_to_page(arrangement: CVArrangement, context: CVContext) -> CVArrangement
     """The arrangement with lines dropped, least valuable first, until it fits a page.
 
     A person fitting a CV to one page cuts in a predictable order, and this
-    follows it, re-measuring with :func:`app.documents.render.estimated_lines`
+    follows it, re-measuring with :func:`app.documents.pdf.fits_one_page`
     after every cut:
 
     1. projects' extra bullets, last project first, down to one each;

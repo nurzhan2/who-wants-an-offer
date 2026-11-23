@@ -76,6 +76,12 @@ _BULLET = re.compile(r"^\s*(?:[-*•–—·]|\d{1,2}[.)])\s+")
 #: turns up in documents written for an ATS.
 _INLINE_SEPARATORS = re.compile(r"[,;|•·]")
 
+#: A line that opens with a bullet glyph is an item, never a heading, whatever
+#: follows: "• Evaluation loop: built…" and "• Courses: algorithms, …" are a
+#: bullet's own lead-in label, and reading them as headings would split the
+#: section they belong to and break every count rule over it.
+_GLYPH_BULLET = re.compile(r"^\s*[•▪●◦‣]\s")
+
 #: Markdown emphasis around a whole heading line: ``**Навыки**``.
 _BOLD_LINE = re.compile(r"^\*\*(?P<text>.+?)\*\*$")
 
@@ -184,7 +190,7 @@ def _heading_text(line: str) -> str | None:
     checked before the colon form so ``## Навыки:`` loses both markers.
     """
     text = line.strip()
-    if not text or len(text) > MAX_HEADING_CHARS:
+    if not text or len(text) > MAX_HEADING_CHARS or _GLYPH_BULLET.match(text):
         return None
 
     if text.startswith("#"):
@@ -225,7 +231,7 @@ def _split_heading_line(line: str) -> tuple[str, str] | None:
     zero for a document that in fact lists twelve.
     """
     text = line.strip()
-    if not text or text.startswith("#") or ":" not in text:
+    if not text or text.startswith("#") or ":" not in text or _GLYPH_BULLET.match(text):
         return None
     head, _, tail = text.partition(":")
     tail = tail.strip()
