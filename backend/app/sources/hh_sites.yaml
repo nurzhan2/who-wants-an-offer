@@ -164,8 +164,8 @@ night:
   pause_minutes: 45
   # Empty: the cities the resume names. Add hosts here once Almaty is covered —
   #   cities:
-  #     - {host: almaty.hh.kz, weight: 3}
-  #     - {host: astana.hh.kz, weight: 1}
+  #     - {host: almaty.hh.kz, share: 3}
+  #     - {host: astana.hh.kz, share: 1}
   # All four, 7 Oct 2026: Almaty alone holds ~14 000 and the target is several
   # times that. Weights follow each city's share of the corpus, roughly.
   # hh.ru added 19 Nov 2026 (phase 22) with weight 2, last in the walk. Its
@@ -174,11 +174,11 @@ night:
   # (`not_remote` against `stored` in the log). The pace is shared — the token
   # bucket is the source's, not the host's — so this adds no requests a second.
   cities:
-    - {host: almaty.hh.kz, weight: 4}
-    - {host: astana.hh.kz, weight: 3}
-    - {host: shymkent.hh.kz, weight: 1}
-    - {host: karaganda.hh.kz, weight: 1}
-    - {host: hh.ru, weight: 2}
+    - {host: almaty.hh.kz, share: 4}
+    - {host: astana.hh.kz, share: 3}
+    - {host: shymkent.hh.kz, share: 1}
+    - {host: karaganda.hh.kz, share: 1}
+    - {host: hh.ru, share: 2}
   # Catalogue only at night too, 23 Nov 2026. The night used to be the corpus
   # walk — length was the lever for "tens of thousands" — and that is exactly
   # the junk the owner asked to stop paying for. What the night buys instead is

@@ -364,3 +364,14 @@ def test_the_shipped_server_and_night_blocks_are_catalogue_only_and_fresh() -> N
         assert config.catalog_pages is not None and config.catalog_pages >= 30, profile
     raw = yaml.safe_load(SITES_FILE.read_text(encoding="utf-8"))
     assert "rate" not in str(raw["crawl"]).lower()
+
+
+def test_a_city_key_nobody_reads_is_an_error_not_an_equal_share() -> None:
+    """The night block said ``weight:``; the field is ``share``; all weights were lost."""
+    from pydantic import ValidationError
+
+    from app.sources.hh import CrawlCity
+
+    assert CrawlCity(host="almaty.hh.kz", share=4).share == 4
+    with pytest.raises(ValidationError):
+        CrawlCity.model_validate({"host": "almaty.hh.kz", "weight": 4})

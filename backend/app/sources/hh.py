@@ -1198,7 +1198,10 @@ class CrawlCity(BaseModel):
     when the owner asked for four.
     """
 
-    model_config = ConfigDict(frozen=True)
+    #: ``extra="forbid"`` since 23 Nov 2026: the night block said ``weight:``
+    #: and the field was ``share``, so every weight was silently ignored and
+    #: each city got an equal slice. A key nobody reads is now an error.
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str = Field(min_length=1, max_length=100)
     share: float = Field(default=1.0, gt=0)
