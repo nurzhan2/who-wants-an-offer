@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import AppError, ConflictError, NotFoundError
+from app.core.exceptions import AppError, ConflictError, NotFoundError, provider_problem
 from app.core.logging import get_logger
 from app.db.enums import ParseStatus
 from app.db.models import CandidateProfile
@@ -195,6 +195,8 @@ def background_failure(exc: Exception) -> str:
     huggingface.co). The exception's text is not shown — it can carry a URL or
     a path — only its class, which is what the server log is searched by.
     """
+    if (problem := provider_problem(exc)) is not None:
+        return f"Разбор не завершился: {problem}. Потом загрузите резюме ещё раз."
     return (
         f"Разбор не завершился из-за ошибки на сервере ({type(exc).__name__}). "
         "Загрузите резюме ещё раз. Если повторится — проверьте подключение к интернету "

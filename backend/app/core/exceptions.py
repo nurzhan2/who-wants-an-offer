@@ -224,3 +224,26 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+
+
+def provider_problem(error: BaseException) -> str | None:
+    """A model provider's refusal the owner can fix, in Russian; None for anything else.
+
+    24 Nov 2026: every parse failed with «AuthenticationError», a class name
+    nobody can act on, when the API key had stopped being accepted. Matched by
+    class name so this module stays free of the SDK import.
+    """
+    name = type(error).__name__
+    text = str(error).lower()
+    if name == "AuthenticationError":
+        return (
+            "API-ключ Anthropic не принят (401): создайте новый ключ в console.anthropic.com "
+            "и впишите его в ANTHROPIC_API_KEY в Railway"
+        )
+    if name == "PermissionDeniedError":
+        return "у API-ключа Anthropic нет доступа к этой модели (403)"
+    if name == "BadRequestError" and "credit balance" in text:
+        return "на счёте Anthropic закончились деньги: пополните баланс в console.anthropic.com"
+    if name == "RateLimitError":
+        return "Anthropic временно ограничил запросы (429): повторите через минуту"
+    return None

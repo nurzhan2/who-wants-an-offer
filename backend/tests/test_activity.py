@@ -50,3 +50,16 @@ async def test_a_reload_cancels_the_wait_not_the_work() -> None:
     for _ in range(10):
         await asyncio.sleep(0)
     assert next(i for i in activity.recent() if i["key"] == "v-reload")["state"] == "done"
+
+
+def test_a_refused_api_key_is_named_with_what_to_do() -> None:
+    """24 Nov: every parse said «AuthenticationError», which nobody can act on."""
+    from app.core.exceptions import provider_problem
+    from app.services.resume import background_failure
+
+    class AuthenticationError(Exception):
+        pass
+
+    assert "ANTHROPIC_API_KEY" in (provider_problem(AuthenticationError("invalid x-api-key")) or "")
+    assert "ANTHROPIC_API_KEY" in background_failure(AuthenticationError("401"))
+    assert provider_problem(ValueError("x")) is None

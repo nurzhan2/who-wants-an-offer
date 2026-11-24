@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, provider_problem
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -113,7 +113,8 @@ def fail(item: Activity, error: BaseException) -> None:
     item.detail = (
         error.detail
         if isinstance(error, AppError) and error.detail
-        else f"ошибка на сервере ({type(error).__name__}); подробности в журнале"
+        else provider_problem(error)
+        or f"ошибка на сервере ({type(error).__name__}); подробности в журнале"
     )
     logger.warning("activity.failed", kind=item.kind, key=item.key, error=type(error).__name__)
 
